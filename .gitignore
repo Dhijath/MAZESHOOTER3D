@@ -1,0 +1,22 @@
+# ビルド出力
+x64/
+*.exe
+*.pdb
+*.obj
+*.ilk
+*.exp
+*.cso
+
+# Visual Studio キャッシュ（7.2GB）
+.vs/
+
+# ビルド中間フォルダ
+GP11A21D.*/
+
+# ユーザー設定
+*.vcxproj.user
+
+# その他
+.claude/
+Thumbs.db
+Desktop.ini

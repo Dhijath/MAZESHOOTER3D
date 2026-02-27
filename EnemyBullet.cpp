@@ -1,0 +1,254 @@
+/*=====/*==============================================================================
+
+   エネミー弾制御 [EnemyBullet.cpp]
+                                                         Author : 51106
+                                                         Date   : 2026/02/24
+--------------------------------------------------------------------------------
+
+==============================================================================*/
+
+#include "EnemyBullet.h"
+#include "model.h"
+#include "map.h"
+#include "Player.h"
+#include "collision.h"
+#include "collision_obb.h"
+#include "bullet_hit_effect.h"
+#include <cmath>
+#include <algorithm>
+#include "light.h"
+
+using namespace DirectX;
+
+//==============================================================================
+// 定数
+//==============================================================================
+static constexpr int    MAX_ENEMY_BULLET = 128;   // 弾の最大同時数
+static constexpr float  BULLET_SPEED = 8.0f;  // 移動速度（m/s）
+static constexpr double BULLET_LIFE_TIME = 3.0;   // 寿命（秒）
+static constexpr float  BULLET_SIZE = 0.05f; // モデルスケール
+static constexpr float  BULLET_HALF_W = 0.1f;  // 衝突判定用の半幅（X/Z）
+static constexpr float  BULLET_HALF_H = 0.1f;  // 衝突判定用の半高さ（Y）
+
+//==============================================================================
+// 弾1発分のデータ構造体
+//==============================================================================
+struct EnemyBulletData
+{
+    XMFLOAT3 position;         // 現在位置（ワールド座標）
+    XMFLOAT3 prevPosition;     // 前フレーム位置（エフェクト生成位置に使用）
+    XMFLOAT3 velocity;         // 速度ベクトル（正規化済み × BULLET_SPEED）
+    double   accumulatedTime;  // 経過時間（寿命管理用）
+    int      damage;           // プレイヤーへのダメージ量
+    bool     destroyed;        // 消滅フラグ（trueで次のUpdate時に削除）
+};
+
+//==============================================================================
+// モジュール内グローバル変数
+//==============================================================================
+namespace
+{
+    EnemyBulletData g_Bullets[MAX_ENEMY_BULLET]; // 弾配列
+    int             g_Count = 0;                 // 現在の弾数
+    MODEL* g_pModel = nullptr;           // 弾のモデル
+}
+
+//==============================================================================
+// 前方宣言（内部ヘルパー関数）
+//==============================================================================
+static void CheckWallCollision(EnemyBulletData& b);
+static void CheckPlayerCollision(EnemyBulletData& b);
+
+//==============================================================================
+// システム初期化
+//==============================================================================
+void EnemyBullet_Initialize()
+{
+    g_Count = 0;
+    g_pModel = ModelLoad("resource/Models/bullet.fbx", BULLET_SIZE);
+}
+
+//==============================================================================
+// システム終了処理
+//==============================================================================
+void EnemyBullet_Finalize()
+{
+    ModelRelease(g_pModel);
+    g_pModel = nullptr;
+    g_Count = 0;
+}
+
+//==============================================================================
+// 全弾の更新
+//==============================================================================
+void EnemyBullet_Update(double elapsed_time)
+{
+    for (int i = 0; i < g_Count; ++i)
+    {
+        EnemyBulletData& b = g_Bullets[i];
+        if (b.destroyed) continue;
+
+        // 寿命チェック
+        b.accumulatedTime += elapsed_time;
+        if (b.accumulatedTime >= BULLET_LIFE_TIME)
+        {
+            b.destroyed = true;
+            continue;
+        }
+
+        // 前フレーム位置を保存してから位置を更新する
+        b.prevPosition = b.position;
+
+        XMVECTOR pos = XMLoadFloat3(&b.position);
+        XMVECTOR vel = XMLoadFloat3(&b.velocity);
+        pos += vel * static_cast<float>(elapsed_time);
+        XMStoreFloat3(&b.position, pos);
+
+        // 壁との衝突チェック
+        CheckWallCollision(b);
+        if (b.destroyed) continue;
+
+        // プレイヤーとの衝突チェック
+        CheckPlayerCollision(b);
+    }
+
+    // 消滅した弾をSwap & Popで詰める
+    for (int i = 0; i < g_Count; )
+    {
+        if (g_Bullets[i].destroyed)
+        {
+            // 末尾の要素と入れ替えて数を減らす
+            g_Bullets[i] = g_Bullets[g_Count - 1];
+            g_Count--;
+        }
+        else
+        {
+            ++i;
+        }
+    }
+}
+
+//==============================================================================
+// 全弾の描画
+//==============================================================================
+void EnemyBullet_Draw()
+{
+    if (!g_pModel) return;
+
+    Light_SetAmbient({ 10.0, 1.0, 1.0 });
+    for (int i = 0; i < g_Count; ++i)
+    {
+        const EnemyBulletData& b = g_Bullets[i];
+
+        // 進行方向からY軸回転角を計算する
+        float angle = -atan2f(b.velocity.z, b.velocity.x);
+
+        XMMATRIX rot = XMMatrixRotationY(angle);
+        XMMATRIX trans = XMMatrixTranslation(b.position.x, b.position.y, b.position.z);
+
+        ModelDraw(g_pModel, rot * trans);
+    }
+
+    Light_SetAmbient({ 1.0, 1.0, 1.0 });
+}
+
+//==============================================================================
+// エネミー弾生成
+//==============================================================================
+void EnemyBullet_Create(const XMFLOAT3& position, const XMFLOAT3& velocity, int damage)
+{
+    // 上限チェック
+    if (g_Count >= MAX_ENEMY_BULLET) return;
+
+    EnemyBulletData& b = g_Bullets[g_Count];
+
+    b.position = position;
+    b.prevPosition = position;
+    b.accumulatedTime = 0.0;
+    b.damage = damage;
+    b.destroyed = false;
+
+    // 速度をBULLET_SPEEDに正規化する
+    XMVECTOR v = XMLoadFloat3(&velocity);
+    float len = XMVectorGetX(XMVector3Length(v));
+    if (len > 0.0001f)
+        v = v / len * BULLET_SPEED;
+    XMStoreFloat3(&b.velocity, v);
+
+    ++g_Count;
+}
+
+//==============================================================================
+// 弾数取得
+//==============================================================================
+int EnemyBullet_GetCount()
+{
+    return g_Count;
+}
+
+//==============================================================================
+// 壁衝突チェック（内部ヘルパー）
+//
+// ■役割
+// ・弾の現在位置が壁AABBと重なっていたら消滅フラグを立てる
+// ・消滅時は前フレーム位置でヒットエフェクトを生成する
+//
+// ■引数
+// ・b : 判定対象の弾データ（入出力）
+//==============================================================================
+static void CheckWallCollision(EnemyBulletData& b)
+{
+    // 弾の簡易AABBを生成する
+    AABB bulletAABB =
+    {
+        { b.position.x - BULLET_HALF_W, b.position.y - BULLET_HALF_H, b.position.z - BULLET_HALF_W },
+        { b.position.x + BULLET_HALF_W, b.position.y + BULLET_HALF_H, b.position.z + BULLET_HALF_W }
+    };
+
+    for (int i = 0; i < Map_GetObjectsCount(); ++i)
+    {
+        const MapObject* mo = Map_GetObject(i);
+        if (!mo)           continue;
+        if (mo->KindId != 2) continue; // 壁のみ判定する（KindId 2 = 壁）
+
+        if (Collision_IsHitAABB(bulletAABB, mo->Aabb).isHit)
+        {
+            BulletHitEffect_Create(b.prevPosition); // エフェクトを前フレーム位置で生成する
+            b.destroyed = true;
+            return;
+        }
+    }
+}
+
+//==============================================================================
+// プレイヤー衝突チェック（内部ヘルパー）
+//
+// ■役割
+// ・プレイヤーOBBと弾AABBが重なっていたらダメージを与えて消滅する
+// ・プレイヤーが無効または無敵中はスキップする
+//
+// ■引数
+// ・b : 判定対象の弾データ（入出力）
+//==============================================================================
+static void CheckPlayerCollision(EnemyBulletData& b)
+{
+    // プレイヤーが無効または無敵中はスキップする
+    if (!Player_IsEnable())     return;
+    if (Player_IsInvincible())  return;
+
+    // 弾の簡易AABBを生成する
+    AABB bulletAABB =
+    {
+        { b.position.x - BULLET_HALF_W, b.position.y - BULLET_HALF_H, b.position.z - BULLET_HALF_W },
+        { b.position.x + BULLET_HALF_W, b.position.y + BULLET_HALF_H, b.position.z + BULLET_HALF_W }
+    };
+
+    OBB playerOBB = Player_GetOBB();
+
+    if (Collision_IsHitOBB_AABB(playerOBB, bulletAABB).isHit)
+    {
+        Player_TakeDamage(b.damage);            // プレイヤーにダメージを与える
+        BulletHitEffect_Create(b.position);     // ヒットエフェクトを生成する
+        b.destroyed = true;
+    }
+}
