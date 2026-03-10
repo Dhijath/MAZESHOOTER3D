@@ -139,10 +139,18 @@ namespace
         const AABB bodyAABB = ModelGetAABB(g_pPlayerModel, bodyWorldPos);
         const AABB thrusterLocal = ModelGetAABB(g_pThrusterModel, { 0.0f, 0.0f, 0.0f });
 
-        XMMATRIX thrusterLocalRot = XMMatrixRotationY(g_ThrusterLocalYaw);
+        // スラスターのローカル中心を計算
+        const float centerX = (thrusterLocal.min.x + thrusterLocal.max.x) * 0.5f;
+        const float centerY = (thrusterLocal.min.y + thrusterLocal.max.y) * 0.5f;
+        const float centerZ = (thrusterLocal.min.z + thrusterLocal.max.z) * 0.5f;
 
-        constexpr float THRUSTER_FORWARD_OFFSET = 0.15f;
+        // 中心を原点に移動 → 回転 → 中心を戻す
+        XMMATRIX toCenter = XMMatrixTranslation(-centerX, -centerY, -centerZ);
+        XMMATRIX rot = XMMatrixRotationY(g_ThrusterLocalYaw);
+        XMMATRIX fromCenter = XMMatrixTranslation(centerX, centerY, centerZ);
 
+        XMMATRIX thrusterLocalRot = toCenter * rot * fromCenter;
+        constexpr float THRUSTER_FORWARD_OFFSET = -0.05f;
         XMVECTOR playerFront = XMVector3Normalize(XMLoadFloat3(&g_PlayerFront));
 
         XMMATRIX thrusterTrans = XMMatrixTranslation(
@@ -159,7 +167,8 @@ namespace
         constexpr float BARREL_FLIP_DEG = 180.0f;  // 上下反転（Z軸）
         constexpr float BARREL_LEAN_DEG = -30.0f;  // 左傾き（Z軸）調整可
         constexpr float BARREL_TILT_DEG = 0.0f;  // ナナメ角度（X軸）調整可
-        constexpr float BARREL_SIDE_X = 0.40f;  // 右横オフセット（調整可）
+        constexpr float BARREL_SIDE_X = 0.30f;  // 右横オフセット（調整可）
+        constexpr float BARREL_FORWARD_OFFSET = 0.3f;  // 前方オフセット（調整可）
 
         const XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 
@@ -176,9 +185,11 @@ namespace
 
         // バレル原点位置（ボディ底面・右側）
         const XMFLOAT3 barrelOriginPos = {
-            g_PlayerPosition.x + XMVectorGetX(playerRight) * BARREL_SIDE_X,
+            g_PlayerPosition.x + XMVectorGetX(playerRight) * BARREL_SIDE_X
+                               + XMVectorGetX(playerFront) * BARREL_FORWARD_OFFSET,  // 追加
             bodyAABB.min.y,
             g_PlayerPosition.z + XMVectorGetZ(playerRight) * BARREL_SIDE_X
+                               + XMVectorGetZ(playerFront) * BARREL_FORWARD_OFFSET   // 追加
         };
         XMMATRIX barrelTrans = XMMatrixTranslation(
             barrelOriginPos.x, barrelOriginPos.y, barrelOriginPos.z);
@@ -224,6 +235,77 @@ namespace
             XMMatrixRotationX(XMConvertToRadians(BARREL_TILT_DEG));
 
         return localRot * aimRot * barrelTrans;
+    }
+
+    static XMMATRIX Player_GetShieldWorldMatrix()
+    {
+        constexpr float SHIELD_FLIP_DEG = 180.0f;  // 上下反転
+        constexpr float SHIELD_LEAN_DEG = 30.0f;  // 右傾き（バレルと逆）
+        constexpr float SHIELD_TILT_DEG = 0.0f;  // ナナメ角度
+        constexpr float SHIELD_SIDE_X = -0.30f;  // 左横オフセット（マイナス）
+        constexpr float SHIELD_FORWARD_OFFSET = 0.3f; // 前方オフセット
+
+        const XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+
+        XMVECTOR playerFront = XMVector3Normalize(XMLoadFloat3(&g_PlayerFront));
+        XMVECTOR playerRight = XMVector3Normalize(XMVector3Cross(up, playerFront));
+
+        const XMFLOAT3 bodyWorldPos = {
+            g_PlayerPosition.x,
+            g_PlayerPosition.y + PLAYER_HEIGHT_OFFSET,
+            g_PlayerPosition.z
+        };
+        const AABB bodyAABB = ModelGetAABB(g_pPlayerModel, bodyWorldPos);
+
+        const XMFLOAT3 shieldOriginPos = {
+            g_PlayerPosition.x + XMVectorGetX(playerRight) * SHIELD_SIDE_X
+                               + XMVectorGetX(playerFront) * SHIELD_FORWARD_OFFSET,
+            bodyAABB.min.y,
+            g_PlayerPosition.z + XMVectorGetZ(playerRight) * SHIELD_SIDE_X
+                               + XMVectorGetZ(playerFront) * SHIELD_FORWARD_OFFSET
+        };
+
+        XMMATRIX shieldTrans = XMMatrixTranslation(
+            shieldOriginPos.x, shieldOriginPos.y, shieldOriginPos.z);
+
+        // バレルと同じ照準方向ロジック
+        XMVECTOR aimDir;
+        XMFLOAT3 lockOnPos;
+        if (Game_GetLockOnWorldPos(&lockOnPos))
+        {
+            XMVECTOR toTarget = XMLoadFloat3(&lockOnPos)
+                - XMLoadFloat3(&shieldOriginPos);
+            aimDir = XMVector3Normalize(toTarget);
+        }
+        else
+        {
+            XMFLOAT3 camFront = Player_Camera_GetFront();
+            aimDir = XMVector3Normalize(XMVectorSet(camFront.x, 0.0f, camFront.z, 0.0f));
+        }
+
+        XMVECTOR aimZ = XMVectorNegate(aimDir);
+        XMVECTOR aimX = XMVector3Normalize(XMVector3Cross(up, aimZ));
+        if (XMVectorGetX(XMVector3LengthSq(aimX)) < 0.001f)
+            aimX = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
+        XMVECTOR aimY = XMVector3Cross(aimZ, aimX);
+
+        XMFLOAT3 ax, ay, az;
+        XMStoreFloat3(&ax, aimX);
+        XMStoreFloat3(&ay, aimY);
+        XMStoreFloat3(&az, aimZ);
+
+        XMMATRIX aimRot(
+            ax.x, ax.y, ax.z, 0.0f,
+            ay.x, ay.y, ay.z, 0.0f,
+            az.x, az.y, az.z, 0.0f,
+            0.0f, 0.0f, 0.0f, 1.0f
+        );
+
+        XMMATRIX localRot =
+            XMMatrixRotationZ(XMConvertToRadians(SHIELD_FLIP_DEG + SHIELD_LEAN_DEG)) *
+            XMMatrixRotationX(XMConvertToRadians(SHIELD_TILT_DEG));
+
+        return localRot * aimRot * shieldTrans;
     }
 
     static XMMATRIX Player_GetHeadWorldMatrix()
@@ -895,6 +977,11 @@ void Player_Draw() // プレイヤー描画（無敵点滅の考慮、モデル�
     if (g_pBarrelModel)
     {
         ModelDraw(g_pBarrelModel, Player_GetBarrelWorldMatrix());
+    }
+
+    if (g_pShieldModel)
+    {
+        ModelDraw(g_pShieldModel, Player_GetShieldWorldMatrix());
     }
 
     if (g_PlayerThrusterEmitter)
