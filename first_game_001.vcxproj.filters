@@ -501,30 +501,4 @@
       <Filter>シェーダー ファイル</Filter>
     </FxCompile>
   </ItemGroup>
-  <ItemGroup>
-    <None Include="Resource\Shader\shader_vertex_2d.cso">
-      <Filter>シェーダー ファイル</Filter>
-    </None>
-    <None Include="Resource\Shader\shader_vertex_billboard.cso">
-      <Filter>シェーダー ファイル</Filter>
-    </None>
-    <None Include="Resource\Shader\shader_vertex_field.cso">
-      <Filter>シェーダー ファイル</Filter>
-    </None>
-    <None Include="Resource\Shader\shader_pixel_2d.cso">
-      <Filter>シェーダー ファイル</Filter>
-    </None>
-    <None Include="Resource\Shader\shader_pixel_billboard.cso">
-      <Filter>シェーダー ファイル</Filter>
-    </None>
-    <None Include="Resource\Shader\shader_pixel_field.cso">
-      <Filter>シェーダー ファイル</Filter>
-    </None>
-    <None Include="Resource\Shader\shader_pixel_3d.cso">
-      <Filter>シェーダー ファイル</Filter>
-    </None>
-    <None Include="Resource\Shader\shader_vertex_3d.cso">
-      <Filter>シェーダー ファイル</Filter>
-    </None>
-  </ItemGroup>
 </Project>

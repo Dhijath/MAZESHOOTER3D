@@ -1,4 +1,4 @@
-#ifndef SAMPLER_H
+﻿#ifndef SAMPLER_H
 #define SAMPLER_H
 
 #include <d3d11.h>

@@ -21,12 +21,15 @@ struct MODEL;
 class Enemy
 {
 public:
-    static constexpr float ENEMY_SIZE = 0.1f;
+    static constexpr float ENEMY_SIZE = 0.25;
     static constexpr float ENEMY_HEIGHT = 0.3f;
     static constexpr float ENEMY_HALF_WIDTH_X = 0.25f;
     static constexpr float ENEMY_HALF_WIDTH_Z = 0.25f;
 
-    static constexpr float MAX_SPEED = 5.0f;
+    static constexpr float SIGHT_DIST  = 5.0f;
+    static constexpr float CHASE_SPD   = 2.0f;
+    static constexpr float PATROL_SPD  = 1.0f;
+    static constexpr float MAX_SPEED   = 5.0f;
     static constexpr float GRAVITY_MUL = 3.0f;
     static constexpr float FRICTION = 4.0f;
 
@@ -211,17 +214,17 @@ protected:
     //==========================================================================
     void ResolveBulletHits();
 
-    DirectX::XMFLOAT3 m_Position;     // 現在位置
-    DirectX::XMFLOAT3 m_Velocity;     // 速度
-    DirectX::XMFLOAT3 m_Front;        // 向き（正面ベクトル）
-    DirectX::XMFLOAT3 m_Destination;  // 巡回目的地
+    DirectX::XMFLOAT3 m_Position    {};  // 現在位置
+    DirectX::XMFLOAT3 m_Velocity    {};  // 速度
+    DirectX::XMFLOAT3 m_Front       {};  // 向き（正面ベクトル）
+    DirectX::XMFLOAT3 m_Destination {};  // 巡回目的地
 
     MODEL* m_pModel = nullptr;         // モデル
 
-    int  m_Hp = 0;                  // 現在のHP
+    int  m_Hp    = 0;                  // 現在のHP
     int  m_MaxHp = 0;                  // 最大HP
 
-    bool m_IsAlive = false;         // 生存フラグ
+    bool m_IsAlive = false;            // 生存フラグ
     mutable bool m_IsGround = false;   // 接地フラグ
     bool m_WasChasing = false;         // 前フレームの追跡フラグ
 };

@@ -270,7 +270,7 @@ void Player_Initialize(const DirectX::XMFLOAT3& position, const DirectX::XMFLOAT
     XMStoreFloat3(&g_PlayerFront, XMVector3Normalize(XMLoadFloat3(&front)));
 
     g_PlayerWhightTexID = Texture_Load(L"resource/texture/Player_white.png");
-    g_pPlayerModel = ModelLoad("resource/Models/E 45 Aircraft_obj.obj", 0.08);
+    g_pPlayerModel = ModelLoad("resource/Models/enamy", 0.08);
 
     //--------------------------------------------------------------------------
     // SE読み込み

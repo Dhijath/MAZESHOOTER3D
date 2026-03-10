@@ -1,4 +1,4 @@
-#ifndef KEY_LOGGER_H
+﻿#ifndef KEY_LOGGER_H
 #define KEY_LOGGER_H
 
 #include "keyboard.h"

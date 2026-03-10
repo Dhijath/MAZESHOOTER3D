@@ -1,4 +1,4 @@
-#include "effect.h"
+﻿#include "effect.h"
 #include <DirectXMath.h>
 using namespace DirectX;
 #include "sprite_anim.h"
@@ -70,7 +70,7 @@ void Effect_Create(const DirectX::XMFLOAT2& position)
 	{
 		if (e.isEnable) continue;
 
-		//�󂫗̈攭��
+		//空き領域発見
 		e.isEnable = true;
 		e.position = position;
 		e.sprite_anim_id = SpriteAnim_CreatePlayer(g_AnimPatternID);

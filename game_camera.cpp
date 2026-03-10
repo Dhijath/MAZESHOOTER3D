@@ -1,4 +1,4 @@
-#include "game_camera.h"
+ï»¿#include "game_camera.h"
 #include <DirectXMath.h>
 using namespace DirectX;
 #include "shader3d.h"
@@ -61,18 +61,18 @@ void Game_Camera_Update(double elapsed_time)
 {
     XMVECTOR position = XMLoadFloat3(&g_Game_CameraPosition);
 
-    // --- “ü—Í‚ÅŠp“x‚ðXV ---
+    // --- å…¥åŠ›ã§è§’åº¦ã‚’æ›´æ–° ---
     if (KeyLogger_IsPressed(KK_RIGHT)) g_Yaw -= GAME_CAMERA_ROTATION_SPEED * elapsed_time;
     if (KeyLogger_IsPressed(KK_LEFT)) g_Yaw += GAME_CAMERA_ROTATION_SPEED * elapsed_time;
     if (KeyLogger_IsPressed(KK_UP)) g_Pitch += GAME_CAMERA_ROTATION_SPEED * elapsed_time;
     if (KeyLogger_IsPressed(KK_DOWN)) g_Pitch -= GAME_CAMERA_ROTATION_SPEED * elapsed_time;
 
-    // ƒsƒbƒ`Šp‚ð§ŒÀi— •Ô‚è–hŽ~j
+    // ãƒ”ãƒƒãƒè§’ã‚’åˆ¶é™ï¼ˆè£è¿”ã‚Šé˜²æ­¢ï¼‰
     const float limit = XMConvertToRadians(89.0f);
     if (g_Pitch > limit) g_Pitch = limit;
     if (g_Pitch < -limit) g_Pitch = -limit;
 
-    // --- Šp“x‚©‚ç front/right/up ‚ðŒvŽZ ---
+    // --- è§’åº¦ã‹ã‚‰ front/right/up ã‚’è¨ˆç®— ---
     float cosPitch = cosf(g_Pitch);
     XMVECTOR front = XMVectorSet(
         cosPitch * cosf(g_Yaw),
@@ -85,7 +85,7 @@ void Game_Camera_Update(double elapsed_time)
     XMVECTOR right = XMVector3Normalize(XMVector3Cross(XMVectorSet(0, 1, 0, 0), front));
     XMVECTOR up = XMVector3Normalize(XMVector3Cross(front, right));
 
-    // --- ˆÚ“® ---
+    // --- ç§»å‹• ---
     if (KeyLogger_IsPressed(KK_W)) position += front * GAME_CAMERA_MOVE_SPEED * elapsed_time;
     if (KeyLogger_IsPressed(KK_S)) position -= front * GAME_CAMERA_MOVE_SPEED * elapsed_time;
     if (KeyLogger_IsPressed(KK_A)) position -= right * GAME_CAMERA_MOVE_SPEED * elapsed_time;
@@ -93,18 +93,18 @@ void Game_Camera_Update(double elapsed_time)
     if (KeyLogger_IsPressed(KK_Q)) position += up * GAME_CAMERA_MOVE_SPEED * elapsed_time;
     if (KeyLogger_IsPressed(KK_E)) position -= up * GAME_CAMERA_MOVE_SPEED * elapsed_time;
 
-    // --- Œ‹‰Ê‚ð•Û‘¶ ---
+    // --- çµæžœã‚’ä¿å­˜ ---
     XMStoreFloat3(&g_Game_CameraPosition, position);
     XMStoreFloat3(&g_Game_CameraFront, front);
     XMStoreFloat3(&g_Game_CameraRight, right);
     XMStoreFloat3(&g_Game_CameraUp, up);
 
-    // ƒrƒ…[s—ñ
+    // ãƒ“ãƒ¥ãƒ¼è¡Œåˆ—
     XMMATRIX view = XMMatrixLookAtLH(position, position + front, up);
     XMStoreFloat4x4(&g_Game_CameraMatrix, view);
     Shader3d_SetViewMatrix(view);
 
-    // ƒvƒƒWƒFƒNƒVƒ‡ƒ“s—ñ
+    // ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ã‚·ãƒ§ãƒ³è¡Œåˆ—
     float aspect = (float)Direct3D_GetBackBufferWidth() / Direct3D_GetBackBufferHeight();
     XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), aspect, 0.1f, 100.0f);
     XMStoreFloat4x4(&g_PerspectiveMatrix, proj);

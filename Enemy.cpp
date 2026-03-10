@@ -4,6 +4,7 @@
                                                          Author : 51106
                                                          Date   : 2026/01/16
 --------------------------------------------------------------------------------
+
 ==============================================================================*/
 
 #include "Enemy.h"
@@ -14,8 +15,8 @@
 #include "Light.h"
 #include "Player_Camera.h"
 #include "collision_obb.h"
-#include "EnemyAI.h"           
-#include "MapPatrolAI.h"       
+#include "EnemyAI.h"
+#include "MapPatrolAI.h"
 #include <algorithm>
 #include <cmath>
 #include "Audio.h"
@@ -64,7 +65,7 @@ void Enemy::Initialize(const XMFLOAT3& position)
     //＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
     SetHP(300, 300);
 
-    m_pModel = ModelLoad("resource/Models/robomodel.fbx", ENEMY_SIZE);
+    m_pModel = ModelLoad("resource/Models/enemy.fbx", ENEMY_SIZE);
 
     Enemy_LoadSE();
 }
@@ -100,8 +101,9 @@ void Enemy::Update(double elapsed_time)
         &m_Destination,
         &m_WasChasing,
         dt,
-        2.0f,  // 通常エネミーの追跡速度（メートル/秒）
-        1.0f); // 通常エネミーの巡回速度（メートル/秒）
+        CHASE_SPD,   // 通常エネミーの追跡速度
+        PATROL_SPD,  // 通常エネミーの巡回速度
+        SIGHT_DIST); // 視野距離
 
     // AI処理後の速度を再ロード
     vel = XMLoadFloat3(&m_Velocity);
@@ -441,7 +443,7 @@ void Enemy::ResolvePlayerCollision(XMVECTOR* ioPos, XMVECTOR* ioVel)
         return;
     }
 
-    OBB enemyOBB = ConvertPositionToOBB(*ioPos);
+    OBB enemyOBB  = ConvertPositionToOBB(*ioPos);
     OBB playerOBB = Player_GetOBB();
 
     // OBB同士の衝突判定
@@ -484,7 +486,7 @@ void Enemy::ResolveBulletHits()
     for (int i = 0; i < Bullet_GetCount(); ++i)
     {
         OBB bulletOBB = Bullet_GetOBB(i);
-        OBB enemyOBB = GetOBB();
+        OBB enemyOBB  = GetOBB();
 
         if (!Collision_IsOverlapOBB(bulletOBB, enemyOBB))
             continue;

@@ -1,4 +1,4 @@
-#ifndef GRID_H
+﻿#ifndef GRID_H
 #define GRID_H
 
 #include <d3d11.h>

@@ -1,4 +1,4 @@
-
+﻿
 #ifndef Game_Camera_H
 #define Game_Camera_H
 

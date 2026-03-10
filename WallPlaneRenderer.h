@@ -1,6 +1,6 @@
-/*==============================================================================
+ï»¿/*==============================================================================
 
-   •ÇPlane•`‰æ [WallPlaneRenderer.h]
+   å£Planeæç”» [WallPlaneRenderer.h]
                                                          Author : 51106
                                                          Date   : 2026/01/02
 --------------------------------------------------------------------------------
@@ -39,10 +39,10 @@ private:
 private:
     void Release();
 
-    // texId ‚ğ PS(0) ‚ÉƒoƒCƒ“ƒhiWallShaderŒo—Rj
+    // texId ã‚’ PS(0) ã«ãƒã‚¤ãƒ³ãƒ‰ï¼ˆWallShaderçµŒç”±ï¼‰
     void BindTexture_Adapter(ID3D11DeviceContext* ctx, int texId);
 
-    // @—v·‚µ‘Ö‚¦FView/Proj ‚ğ WallShader ‚É“n‚·iƒvƒƒWƒFƒNƒgˆË‘¶j
+    // ã€€è¦å·®ã—æ›¿ãˆï¼šView/Proj ã‚’ WallShader ã«æ¸¡ã™ï¼ˆãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆä¾å­˜ï¼‰
     void SetViewProj_Adapter();
 };
 

@@ -1,4 +1,4 @@
-#ifndef DEBUG_OSTREAM_H
+﻿#ifndef DEBUG_OSTREAM_H
 #define DEBUG_OSTREAM_H
 
 #include <Windows.h>
