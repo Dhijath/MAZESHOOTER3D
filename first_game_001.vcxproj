@@ -150,6 +150,7 @@
     </FxCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Assimp\assimp\cexport.cpp" />
     <ClCompile Include="Audio.cpp" />
     <ClCompile Include="billboard.cpp" />
     <ClCompile Include="blob_shadow.cpp" />
@@ -220,6 +221,7 @@
     <ClCompile Include="title.cpp" />
     <ClCompile Include="WallPlaneRenderer.cpp" />
     <ClCompile Include="WallShader.cpp" />
+    <ClCompile Include="WeaponSelect.cpp" />
     <ClCompile Include="WICTextureLoader11.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -293,6 +295,7 @@
     <ClInclude Include="TileWall.h" />
     <ClInclude Include="title.h" />
     <ClInclude Include="WallShader.h" />
+    <ClInclude Include="WeaponSelect.h" />
     <ClInclude Include="WICTextureLoader11.h" />
     <ClInclude Include="cube.h" />
     <ClInclude Include="player.h" />

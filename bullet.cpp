@@ -14,6 +14,7 @@
 
 ==============================================================================*/
 
+#include <windows.h>  
 #include "bullet.h"
 #include "model.h"
 #include "bullet_hit_effect.h"

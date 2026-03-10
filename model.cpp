@@ -394,8 +394,16 @@ void ModelRelease(MODEL* model)
 //----------------------------------------------
 void ModelDraw(MODEL* model, const DirectX::XMMATRIX& mtxWorld)
 {
+
+    // モデル未読込時は描画しない（呼び出し側の初期化失敗に耐える）
+    if (model == nullptr || model->AiScene == nullptr || model->AiScene->mNumMeshes == 0)
+    {
+        return;
+    }
+
     // シェーダーを描画パイプラインに設定
     Shader3d_Begin();
+
 
     // プリミティブトポロジ
     Direct3D_GetContext()->IASetPrimitiveTopology(
@@ -474,6 +482,16 @@ void ModelDraw(MODEL* model, const DirectX::XMMATRIX& mtxWorld)
 AABB ModelGetAABB(MODEL* model, const DirectX::XMFLOAT3& position)
 {
     AABB aabb;
+
+    // モデルが無効な場合は位置点AABBを返す（クラッシュ回避）
+    if (model == nullptr || model->AiScene == nullptr || model->AiScene->mNumMeshes == 0)
+    {
+        aabb.min = position;
+        aabb.max = position;
+        return aabb;
+    }
+
+
     aiVector3D min = model->AiScene->mMeshes[0]->mAABB.mMin;
     aiVector3D max = model->AiScene->mMeshes[0]->mAABB.mMax;
 

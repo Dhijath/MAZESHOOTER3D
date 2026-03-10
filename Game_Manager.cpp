@@ -9,7 +9,7 @@
    目的:
      - フェードと状態遷移を一元管理
      - BGMは遷移時に差し替え（旧をUnload→新をLoad&Loop）
-     - 　ゴールを3回踏むとクリア
+     - 　ゴールを2回踏む→ボス部屋へ→ボス撃破でクリア
 ==============================================================================*/
 
 #include "Game_Manager.h"
@@ -23,10 +23,10 @@
 #include "key_logger.h"
 #include "Clear.h"
 #include "Result.h"
+#include "WeaponSelect.h"
 #include "Enemy.h"
 #include "map.h"
 #include <cstdint>
-#include "EnemyAPI.h"
 #include "pad_logger.h"
 
 // 現在/次の状態
@@ -46,11 +46,13 @@ static std::uint32_t g_DungeonSeed = 12345u;
 static double g_GoalCooldown = 0.0;
 // ゴール到達によるダンジョン再生成待ちフラグ
 static bool g_PendingDungeonRegenerate = false;
+// ボス部屋フェーズ中フラグ（2回ゴール到達後に true になる）
+static bool g_InBossRoom = false;
 
 // BGMパス（必要に応じて差し替え）
-static const char* BGM_TITLE = "resource/sound/maou_bgm_cyber39.wav";                              
-static const char* BGM_GAME = "resource/sound/maou_bgm_cyber42.wav";                               
-static const char* BGM_OPTION = "resource/sound/maou_bgm_cyber40.wav";                             
+static const char* BGM_TITLE = "resource/sound/newspaper.wav";
+static const char* BGM_GAME = "resource/sound/Experimenta_Model_short.wav";
+static const char* BGM_OPTION = "resource/sound/maou_bgm_cyber40.wav";
 static const char* BGM_RESULT = "resource/sound/maou_bgm_cyber45_1.wav"; // リザルト/クリア兼用    
 
 int g_PlayerWarpSE = -1;
@@ -113,6 +115,7 @@ void GameManager_Initialize()
 void GameManager_Finalize()
 {
     Title_Finalize();
+    WeaponSelect_Finalize();
     Option_Finalize();
     Game_Finalize();
     Clear_Finalize();
@@ -155,7 +158,7 @@ void GameManager_Update(double elapsed_time)
             TitleResult tr = Title_GetResult();
             if (tr == TitleResult::Start)
             {
-                BeginTransition(GameState::Playing, BGM_GAME);
+                BeginTransition(GameState::WeaponSelect, BGM_TITLE);  // タイトルBGM維持
             }
             else if (tr == TitleResult::Option)
             {
@@ -167,6 +170,20 @@ void GameManager_Update(double elapsed_time)
             }
 
             if (Title_IsEnd())
+            {
+                BeginTransition(GameState::WeaponSelect, BGM_TITLE);
+            }
+        }
+        break;
+    }
+
+    case GameState::WeaponSelect:
+    {
+        if (!g_IsTransitioning)
+        {
+            WeaponSelect_Update(elapsed_time);
+
+            if (WeaponSelect_GetResult() == WeaponSelectResult::Decided)
             {
                 BeginTransition(GameState::Playing, BGM_GAME);
             }
@@ -192,25 +209,28 @@ void GameManager_Update(double elapsed_time)
             break;
         }
 
-        // ゴール到達判定（クールダウン中はスキップ）
-        if (g_GoalCooldown <= 0.0 && Map_IsPlayerReachedGoal())
+        // ゴール到達判定（ボス部屋フェーズ中・クールダウン中はスキップ）
+        if (!g_InBossRoom && g_GoalCooldown <= 0.0 && Map_IsPlayerReachedGoal())
         {
             Map_AddGoalReachCount();
 
             if (Map_IsClearConditionMet())
             {
-                // 3回到達：クリア画面へフェード遷移
-                PlayAudio(g_PlayerclearSE);
-                BeginTransition(GameState::Clear, BGM_RESULT);
+                // 2回到達：ボス部屋フェーズへ移行
+                g_InBossRoom = true;
             }
-            else
-            {
-                // 3回未満：フェードアウト完了後にダンジョン再生成を予約
-                g_PendingDungeonRegenerate = true;
-                g_IsTransitioning = true;
-                Fade_Start(0.5, true, { 0.0f, 0.0f, 0.0f });
-                PlayAudio(g_PlayerWarpSE);
-            }
+            // どちらの場合もダンジョン再生成
+            g_PendingDungeonRegenerate = true;
+            g_IsTransitioning = true;
+            Fade_Start(0.5, true, { 0.0f, 0.0f, 0.0f });
+            PlayAudio(g_PlayerWarpSE);
+        }
+
+        // ボス部屋フェーズ中にボスを倒したらクリア
+        if (g_InBossRoom && !Game_IsBossAlive())
+        {
+            PlayAudio(g_PlayerclearSE);
+            BeginTransition(GameState::Clear, BGM_RESULT);
         }
 
         break;
@@ -267,18 +287,23 @@ void GameManager_Update(double elapsed_time)
         {
             g_PendingDungeonRegenerate = false;
 
-            Map_GenerateDungeon(++g_DungeonSeed);
-            Score_Addscore(5000);
+            if (g_InBossRoom)
+            {
+                // ボス部屋フェーズ：単一アリーナを生成（ゴールなし・雑魚なし）
+                Game_SetBossRoomMode(true);
+                Map_GenerateBossRoom(++g_DungeonSeed);
+            }
+            else
+            {
+                // 通常フェーズ：ランダムダンジョン再生成（ボスなし）
+                Game_SetBossRoomMode(false);
+                Map_GenerateDungeon(++g_DungeonSeed);
+                Score_Addscore(5000);
+            }
+
             Map_RegisterFloors();
             Player_SetPosition(Map_GetSpawnPosition(), true);
-            Enemy_Finalize();
-            Enemy_Initialize({});
-
-            const auto& spawns = Map_GetEnemySpawnPositions();
-            for (const auto& p : spawns)
-            {
-                Enemy_Spawn(p);
-            }
+            Game_RespawnEnemies();
 
             g_GoalCooldown = 1.0;
 
@@ -291,14 +316,21 @@ void GameManager_Update(double elapsed_time)
         // 通常の状態遷移
         g_GameState = g_NextState;
 
-        if (g_GameState == GameState::Playing)
+        if (g_GameState == GameState::WeaponSelect)
+        {
+            WeaponSelect_Initialize();
+        }
+        else if (g_GameState == GameState::Playing)
         {
             Game_Initialize();
+            Player_SetNormalWeaponIndex(WeaponSelect_GetSelectedIndex());  // 選択武器を反映
         }
         else if (g_GameState == GameState::Title)
         {
             Title_Initialize();
             Map_ResetGoalReachCount();
+            g_InBossRoom = false;
+            Game_SetBossRoomMode(false);
         }
         else if (g_GameState == GameState::Option)
         {
@@ -324,8 +356,9 @@ void GameManager_Draw()
 {
     switch (g_GameState)
     {
-    case GameState::Title:   Title_Draw();   break;
-    case GameState::Playing: Game_Draw();    break;
+    case GameState::Title:        Title_Draw();         break;
+    case GameState::WeaponSelect: WeaponSelect_Draw();  break;
+    case GameState::Playing:      Game_Draw();          break;
     case GameState::Option:  Option_Draw();  break;
     case GameState::Result:  Result_Draw();  break;
     case GameState::Clear:   Clear_Draw();   break;

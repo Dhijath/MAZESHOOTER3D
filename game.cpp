@@ -47,7 +47,6 @@ using namespace DirectX;
 #include "ItemManager.h"
 #include "EnemyBullet.h"
 #include "EnemyManager.h"
-#include "EnemyManager.h"
 
 
 
