@@ -113,6 +113,8 @@ namespace
     XMFLOAT3 g_SpawnPos = { 0.0f, 1.0f, 0.0f };
     // ゴール位置（中心）
     XMFLOAT3 g_GoalPos = { -1.0f, 1.0f, 0.0f };
+    // ボスのスポーン位置（ゴール部屋の中心）
+    XMFLOAT3 g_BossSpawnPos = { 0.0f, 1.5f, 0.0f };
 
     // ゴールの当たり判定（AABB） ※簡単にするなら中心＋固定サイズ
     AABB g_GoalAabb{};
@@ -410,7 +412,7 @@ void Map_Initialize()
     g_WallTexID = Texture_Load(L"Resource/Texture/wall6.jpg");
     g_CeilingTexID = Texture_Load(L"Resource/Texture/wall6.jpg");
     g_TreeTexID = Texture_Load(L"Resource/Texture/tree.png");
-    g_GoalTexID = Texture_Load(L"Resource/Texture/goal.png"); 
+    g_GoalTexID = Texture_Load(L"Resource/Texture/goal.png");
     g_WhiteTexID = Texture_Load(L"Resource/Texture/white.png");
 
 
@@ -478,6 +480,18 @@ XMFLOAT3 Map_GetSpawnPosition()
 }
 
 //==============================================================================
+// ボスルーム中心座標取得
+//
+// ■役割
+// ・ダンジョン生成時に確定したボスのスポーン位置を返す
+// ・game.cpp から EnemyBoss をスポーンするために使用する
+//==============================================================================
+XMFLOAT3 Map_GetBossSpawnPosition()
+{
+    return g_BossSpawnPos;
+}
+
+//==============================================================================
 // ダンジョン生成
 //
 // ■役割（全体）
@@ -495,8 +509,8 @@ void Map_GenerateDungeon(std::uint32_t seed)
     //==============================
     // マップ全体サイズ（奇数推奨）
     //==============================
-    const int dungeonWidth =    59;
-    const int dungeonHeight =   59;
+    const int dungeonWidth = 79;
+    const int dungeonHeight = 79;
 
     //==============================
     // 部屋生成の試行回数
@@ -512,14 +526,14 @@ void Map_GenerateDungeon(std::uint32_t seed)
     //==============================
     // 部屋サイズ（奇数推奨）
     //==============================
-    const int roomMinSize = 3;
-    const int roomMaxSize = 5;
+    const int roomMinSize = 5;
+    const int roomMaxSize = 7;
 
 
     //==============================
     // 通路の幅（奇数推奨）
     //==============================
-    const int corridorWidth = 3;
+    const int corridorWidth = 5;
 
 
     //==============================
@@ -618,6 +632,51 @@ void Map_GenerateDungeon(std::uint32_t seed)
                 tiles[y * dungeonWidth + x] = MAP_TILE_FLOOR;
             }
         }
+    }
+
+    //==============================
+    // ボスルームの確定と拡張
+    // ・rooms[0]（プレイヤースポーン）から最遠の部屋を 13×13 タイルに拡張する
+    // ・この処理は通路接続・正規化より前に行う（正規化で壁が自然につく）
+    //==============================
+    int bossRoomIdx = 0;
+    if (rooms.size() > 1)
+    {
+        constexpr int BOSS_HALF = 6; // 6*2+1 = 13×13 タイル
+
+        // 最遠部屋を探す（rooms[0] = プレイヤースポーン基準）
+        {
+            int bestD2 = 0;
+            for (int i = 1; i < (int)rooms.size(); ++i)
+            {
+                const int dx = rooms[i].cx() - rooms[0].cx();
+                const int dy = rooms[i].cy() - rooms[0].cy();
+                const int d2 = dx * dx + dy * dy;
+                if (d2 > bestD2) { bestD2 = d2; bossRoomIdx = i; }
+            }
+        }
+
+        // ボスルームを 13×13 タイルに拡張して掘り込む
+        const int bx = rooms[bossRoomIdx].cx();
+        const int by = rooms[bossRoomIdx].cy();
+
+        for (int ry = by - BOSS_HALF; ry <= by + BOSS_HALF; ++ry)
+        {
+            for (int rx = bx - BOSS_HALF; rx <= bx + BOSS_HALF; ++rx)
+            {
+                if (rx > 0 && rx < dungeonWidth - 1 &&
+                    ry > 0 && ry < dungeonHeight - 1)
+                {
+                    tiles[ry * dungeonWidth + rx] = MAP_TILE_FLOOR;
+                }
+            }
+        }
+
+        // Room 構造体を更新（cx()/cy() の整合性を維持するため）
+        rooms[bossRoomIdx].x = bx - BOSS_HALF;
+        rooms[bossRoomIdx].y = by - BOSS_HALF;
+        rooms[bossRoomIdx].w = BOSS_HALF * 2 + 1;
+        rooms[bossRoomIdx].h = BOSS_HALF * 2 + 1;
     }
 
     //==============================
@@ -806,26 +865,6 @@ void Map_GenerateDungeon(std::uint32_t seed)
             }
         }
 
-        // 床の4近傍だけ「壁」にする（= 壁は1層だけ残る）
-        for (int y = 1; y < dungeonHeight - 1; ++y)
-        {
-            for (int x = 1; x < dungeonWidth - 1; ++x)
-            {
-                const int idx = y * dungeonWidth + x;
-                if (tiles[idx] != MAP_TILE_FLOOR) continue;
-
-                const int n = (y - 1) * dungeonWidth + x;
-                const int s = (y + 1) * dungeonWidth + x;
-                const int w_ = y * dungeonWidth + (x - 1);
-                const int e = y * dungeonWidth + (x + 1);
-
-                if (out[n] != MAP_TILE_FLOOR) out[n] = MAP_TILE_WALL;
-                if (out[s] != MAP_TILE_FLOOR) out[s] = MAP_TILE_WALL;
-                if (out[w_] != MAP_TILE_FLOOR) out[w_] = MAP_TILE_WALL;
-                if (out[e] != MAP_TILE_FLOOR) out[e] = MAP_TILE_WALL;
-            }
-        }
-
         //========================================================
         // 追加：1マス壁（柱）を除去（床に戻す）
         // ・床に挟まれている壁 / 床に囲まれた壁は「柱」扱いで床へ
@@ -851,18 +890,45 @@ void Map_GenerateDungeon(std::uint32_t seed)
                 const bool fe = (e == MAP_TILE_FLOOR);
 
                 const int floorCount =
-                    (fn ? 1 : 0) + (fs ? 1 : 0) + (fw ? 1 : 0) + (fe ? 1 : 0);//フロアカウント今は使ってない　フロアカウント
-                (void)floorCount;//エラー切
+                    (fn ? 1 : 0) + (fs ? 1 : 0) + (fw ? 1 : 0) + (fe ? 1 : 0);
 
-                const bool sandwichedX = (fw && fe);//西東タイルに挟まれてますか
-                const bool sandwichedZ = (fn && fs);//北南タイルに挟まれてますか
+                const bool sandwichedX = (fw && fe); // 東西に挟まれている
+                const bool sandwichedZ = (fn && fs); // 南北に挟まれている
 
-                // 挟まれている場合のみ床に戻す、3方向囲まれは壁を維持
-                if (sandwichedX || sandwichedZ)
+                // 除去条件：
+                //   ・対面2方向に床（東西 or 南北）→ 廊下内の柱
+                //   ・3方向以上に床              → 完全孤立柱
+                // 隣接2方向のみ（NE/NW/SE/SW）は部屋コーナー壁なので維持
+                if (sandwichedX || sandwichedZ || floorCount >= 3)
                 {
                     out[idx] = MAP_TILE_FLOOR;
                 }
 
+            }
+        }
+
+        //========================================================
+        // 柱除去後の再壁付け（バグ修正）
+        // ・柱除去で WALL→FLOOR になったタイルの X/Z 隣接が
+        //   EMPTY のまま残ると TileWall が壁 Plane を生成しない
+        // ・EMPTY になっている隣接タイルを WALL に昇格させる
+        //========================================================
+        for (int y = 1; y < dungeonHeight - 1; ++y)
+        {
+            for (int x = 1; x < dungeonWidth - 1; ++x)
+            {
+                const int idx = y * dungeonWidth + x;
+                if (out[idx] != MAP_TILE_FLOOR) continue;
+
+                const int n = (y - 1) * dungeonWidth + x;
+                const int s = (y + 1) * dungeonWidth + x;
+                const int w_ = y * dungeonWidth + (x - 1);
+                const int e_ = y * dungeonWidth + (x + 1);
+
+                if (out[n] == MAP_TILE_EMPTY) out[n] = MAP_TILE_WALL;
+                if (out[s] == MAP_TILE_EMPTY) out[s] = MAP_TILE_WALL;
+                if (out[w_] == MAP_TILE_EMPTY) out[w_] = MAP_TILE_WALL;
+                if (out[e_] == MAP_TILE_EMPTY) out[e_] = MAP_TILE_WALL;
             }
         }
 
@@ -886,11 +952,33 @@ void Map_GenerateDungeon(std::uint32_t seed)
 
 
     //==============================
-    // ゴール位置（最後の部屋の中心）
+    // ゴール位置（スポーンから最も遠い部屋の中心）
+    // CELL_SIZE = 1.0f なのでタイル距離 = ワールド距離（メートル）
+    // 目標: プレイヤースポーンから 30m 以上離れた部屋を優先
     //==============================
     {
-        const int gx = rooms.back().cx();
-        const int gy = rooms.back().cy();
+        // スポーン地点（rooms[0]）のタイル座標
+        const int spawnTileX = rooms[0].cx();
+        const int spawnTileY = rooms[0].cy();
+
+        // 全部屋の中で最も遠い部屋をゴールに選ぶ
+        int gx = rooms.back().cx();   // フォールバック（部屋が1つの場合など）
+        int gy = rooms.back().cy();
+        float bestDistSq = -1.0f;
+
+        for (const auto& room : rooms)
+        {
+            const float dx = static_cast<float>(room.cx() - spawnTileX) * CELL_SIZE;
+            const float dz = static_cast<float>(room.cy() - spawnTileY) * CELL_SIZE;
+            const float distSq = dx * dx + dz * dz;
+
+            if (distSq > bestDistSq)
+            {
+                bestDistSq = distSq;
+                gx = room.cx();
+                gy = room.cy();
+            }
+        }
 
         // Map_Draw と一致
         const float billboardW = 1.0f;
@@ -935,6 +1023,15 @@ void Map_GenerateDungeon(std::uint32_t seed)
 
         g_GoalAabb.min = { minX, minY, minZ };
         g_GoalAabb.max = { maxX, maxY, maxZ };
+
+        // ボスのスポーン位置（ゴール部屋の中心、プレイヤーと同じ高さ）
+        g_BossSpawnPos = TileCoordToWorldCenter(
+            gx, gy,
+            dungeonWidth, dungeonHeight,
+            CELL_SIZE,
+            originX, originZ,
+            1.5f
+        );
     }
 
 
@@ -979,7 +1076,7 @@ void Map_GenerateDungeon(std::uint32_t seed)
         g_WallRenderer.Build(g_WallPlanes);
 
         // 壁の衝突AABB（薄板）を生成して MapObject に積む
-        BuildWallCollidersFromWallPlanes(g_WallPlanes,0.15f);
+        BuildWallCollidersFromWallPlanes(g_WallPlanes, 0.15f);
         // ゴールを MapObject として追加（当たり判定用）
         {
             AddMapObject(KIND_GOAL, g_GoalPos, g_GoalAabb);
@@ -1061,6 +1158,13 @@ void Map_GenerateDungeon(std::uint32_t seed)
 
                             if (distSq > playerSpawnFloorCount * playerSpawnFloorCount)
                             {
+                                // ボスルーム内はスポーン対象外（ボス専用エリアを確保）
+                                const float bossDx = pos.x - g_BossSpawnPos.x;
+                                const float bossDz = pos.z - g_BossSpawnPos.z;
+                                constexpr float BOSS_EXCLUDE_R = 7.0f; // BOSS_HALF+1 タイル相当
+                                if (bossDx * bossDx + bossDz * bossDz < BOSS_EXCLUDE_R * BOSS_EXCLUDE_R)
+                                    continue;
+
                                 candidatePositions.push_back(pos);
                             }
                         }
@@ -1140,16 +1244,24 @@ void Map_GenerateDungeon(std::uint32_t seed)
                 }
 
                 {
-                    const XMFLOAT3 pos = { g_GoalPos.x, minimapY, g_GoalPos.z };
-                    const AABB a = Cube_CreateAABB(pos);
-                    AddMapObject(KIND_MINIMAP_GOAL, pos, a);
+                    for (int dy = -1; dy <= 1; ++dy)
+                        for (int dx = -1; dx <= 1; ++dx)
+                        {
+                            const XMFLOAT3 pos = {
+                                g_GoalPos.x + dx * CELL_SIZE,
+                                minimapY,
+                                g_GoalPos.z + dy * CELL_SIZE
+                            };
+                            const AABB a = Cube_CreateAABB(pos);
+                            AddMapObject(KIND_MINIMAP_GOAL, pos, a);
+                        }
                 }
             }
         }
 
 
 
-        }
+    }
 
 }
 
@@ -1256,7 +1368,7 @@ void Map_Draw()
    //    XMMATRIX mtxWorldField = XMMatrixIdentity();
    //    MeshField_Draw(mtxWorldField);
    //}
-        
+
     //--------------------------------------------------------------------------
     // 3D描画 状態
     //--------------------------------------------------------------------------
@@ -1265,7 +1377,7 @@ void Map_Draw()
     //--------------------------------------------------------------------------
     // 床をメッシュフィールドで描画、天井はCube
     //--------------------------------------------------------------------------
-    for (const MapObject& o : g_MapObjects) 
+    for (const MapObject& o : g_MapObjects)
     {
         if (o.KindId == KIND_FLOOR)
         {
@@ -1287,14 +1399,14 @@ void Map_Draw()
             // ミニマップ用床：緑
             Shader3d_SetColor({ 0.5f, 0.5f, 0.5f, 0.5f });  // 濃いグレー
             const XMMATRIX world = XMMatrixTranslation(o.Position.x, o.Position.y, o.Position.z);
-            MeshField_DrawTile(world, g_WhiteTexID, CELL_SIZE); 
+            MeshField_DrawTile(world, g_WhiteTexID, CELL_SIZE);
             Shader3d_SetColor({ 1.0f, 1.0f, 1.0f, 1.0f });
         }
         else if (o.KindId == KIND_MINIMAP_GOAL)
         {
             // ゴール：黄色
             Shader3d_SetColor({ 0.0f, 0.0f, 0.7f, 1.0f });
-            const XMMATRIX world = XMMatrixTranslation(o.Position.x, o.Position.y+1, o.Position.z);
+            const XMMATRIX world = XMMatrixTranslation(o.Position.x, o.Position.y + 1, o.Position.z);
             MeshField_DrawTile(world, g_WhiteTexID, CELL_SIZE);
             Shader3d_SetColor({ 1.0f, 1.0f, 1.0f, 1.0f });
         }
@@ -1303,7 +1415,7 @@ void Map_Draw()
 
 
 
-        
+
 
 
 
@@ -1348,9 +1460,6 @@ void Map_Draw()
     // ゴール表示（ビルボード）
     //--------------------------------------------------------------------------
     {
-        // 　アルファブレンド有効化
-        ID3D11DeviceContext* ctx = Direct3D_GetContext();
-
         // 既存のブレンドステートを取得（退避）
         ID3D11BlendState* oldBlendState = nullptr;
         FLOAT oldBlendFactor[4];
@@ -1424,7 +1533,7 @@ const MapObject* Map_GetObject(int index)
 void Map_AddGoalReachCount()
 {
     g_GoalReachCount++;
-    enemy_spawnrate-=2;
+    enemy_spawnrate -= 2;
 
     // 最低値の制限（エネミーが多すぎないように）
     if (enemy_spawnrate < 3)
@@ -1455,6 +1564,184 @@ void Map_ResetGoalReachCount()
 bool Map_IsClearConditionMet()
 {
     return g_GoalReachCount >= GOAL_REQUIRED_COUNT;
+}
+
+//==============================================================================
+// ボス部屋専用マップ生成
+//
+// ■役割
+// ・2回ゴール到達後に遷移するボス専用アリーナ（単一の大部屋）を生成する
+// ・通常ダンジョンの代わりに呼ぶ
+// ・ゴールは無効化、通常エネミースポーンなし
+//==============================================================================
+void Map_GenerateBossRoom(std::uint32_t /*seed*/)
+{
+    //==============================
+    // マップサイズ（単一アリーナ）
+    //==============================
+    const int mapW = 21;
+    const int mapH = 21;
+    const float originX = 0.5f;
+    const float originZ = 0.5f;
+
+    //==============================
+    // 全て壁で初期化
+    //==============================
+    std::vector<int> tiles(mapW * mapH, MAP_TILE_WALL);
+
+    //==============================
+    // 中央に大部屋を掘る（外周2マスを壁として残す）
+    //==============================
+    const int roomX1 = 2, roomX2 = mapW - 3; // 2..18 → 17タイル幅
+    const int roomY1 = 2, roomY2 = mapH - 3; // 2..18 → 17タイル奥行き
+
+    for (int y = roomY1; y <= roomY2; ++y)
+        for (int x = roomX1; x <= roomX2; ++x)
+            tiles[y * mapW + x] = MAP_TILE_FLOOR;
+
+    //==============================
+    // 外周を必ず壁に固定
+    //==============================
+    for (int x = 0; x < mapW; ++x)
+    {
+        tiles[0 * mapW + x] = MAP_TILE_WALL;
+        tiles[(mapH - 1) * mapW + x] = MAP_TILE_WALL;
+    }
+    for (int y = 0; y < mapH; ++y)
+    {
+        tiles[y * mapW + 0] = MAP_TILE_WALL;
+        tiles[y * mapW + (mapW - 1)] = MAP_TILE_WALL;
+    }
+
+    //==============================
+    // 壁を1層に正規化
+    //==============================
+    {
+        std::vector<int> out(mapW * mapH, MAP_TILE_EMPTY);
+        for (int y = 0; y < mapH; ++y)
+            for (int x = 0; x < mapW; ++x)
+                if (tiles[y * mapW + x] == MAP_TILE_FLOOR)
+                    out[y * mapW + x] = MAP_TILE_FLOOR;
+
+        for (int y = 1; y < mapH - 1; ++y)
+            for (int x = 1; x < mapW - 1; ++x)
+            {
+                if (tiles[y * mapW + x] != MAP_TILE_FLOOR) continue;
+                const int n = (y - 1) * mapW + x;
+                const int s = (y + 1) * mapW + x;
+                const int w_ = y * mapW + (x - 1);
+                const int e_ = y * mapW + (x + 1);
+                if (out[n] != MAP_TILE_FLOOR) out[n] = MAP_TILE_WALL;
+                if (out[s] != MAP_TILE_FLOOR) out[s] = MAP_TILE_WALL;
+                if (out[w_] != MAP_TILE_FLOOR) out[w_] = MAP_TILE_WALL;
+                if (out[e_] != MAP_TILE_FLOOR) out[e_] = MAP_TILE_WALL;
+            }
+
+        for (int x = 0; x < mapW; ++x)
+        {
+            out[0 * mapW + x] = MAP_TILE_WALL;
+            out[(mapH - 1) * mapW + x] = MAP_TILE_WALL;
+        }
+        for (int y = 0; y < mapH; ++y)
+        {
+            out[y * mapW + 0] = MAP_TILE_WALL;
+            out[y * mapW + (mapW - 1)] = MAP_TILE_WALL;
+        }
+
+        tiles.swap(out);
+    }
+
+    //==============================
+    // スポーン位置（部屋の手前側）
+    //==============================
+    g_SpawnPos = TileCoordToWorldCenter(
+        mapW / 2, roomY1 + 2,
+        mapW, mapH, CELL_SIZE, originX, originZ, 1.5f);
+
+    //==============================
+    // ボスのスポーン位置（部屋の奥側）
+    //==============================
+    g_BossSpawnPos = TileCoordToWorldCenter(
+        mapW / 2, roomY2 - 2,
+        mapW, mapH, CELL_SIZE, originX, originZ, 1.5f);
+
+    //==============================
+    // ゴールを無効化（地下に沈めて当たり判定・ビルボードを隠す）
+    //==============================
+    g_GoalPos = { 0.0f, -100.0f, 0.0f };
+    g_GoalAabb = { { -0.01f, -101.0f, -0.01f }, { 0.01f, -99.0f, 0.01f } };
+
+    //==============================
+    // 通常エネミースポーンなし（ボス専用アリーナ）
+    //==============================
+    g_EnemySpawnPositions.clear();
+
+    //==============================
+    // MapObjects 再構築
+    //==============================
+    g_MapObjects.clear();
+    BuildFloorCeilingCollidersFromTiles(tiles, mapW, mapH, CELL_SIZE, originX, originZ);
+
+    //==============================
+    // 壁 Plane（見た目）生成
+    //==============================
+    {
+        TileWallParams par{};
+        par.cellSize = CELL_SIZE;
+        par.floorY = FLOOR_Y;
+        par.wallHeight = WALL_HEIGHT;
+        par.panelHeight = WALL_HEIGHT;
+        par.uvUnitMeter = 1.0f;
+
+        g_WallPlanes.clear();
+        TileWall_BuildFromTiles(tiles, mapW, mapH, originX, originZ, par, g_WallPlanes);
+        g_WallRenderer.Build(g_WallPlanes);
+        BuildWallCollidersFromWallPlanes(g_WallPlanes, 0.15f);
+    }
+
+    //==============================
+    // パトロール AI（8近傍がすべて床のタイルのみ）
+    //==============================
+    {
+        std::vector<XMFLOAT3> patrolPositions;
+        for (int ty = 1; ty < mapH - 1; ++ty)
+        {
+            for (int tx = 1; tx < mapW - 1; ++tx)
+            {
+                if (tiles[ty * mapW + tx] != MAP_TILE_FLOOR) continue;
+
+                const bool n = (tiles[(ty - 1) * mapW + tx] == MAP_TILE_FLOOR);
+                const bool s = (tiles[(ty + 1) * mapW + tx] == MAP_TILE_FLOOR);
+                const bool w = (tiles[ty * mapW + (tx - 1)] == MAP_TILE_FLOOR);
+                const bool e = (tiles[ty * mapW + (tx + 1)] == MAP_TILE_FLOOR);
+                const bool nw = (tiles[(ty - 1) * mapW + (tx - 1)] == MAP_TILE_FLOOR);
+                const bool ne = (tiles[(ty - 1) * mapW + (tx + 1)] == MAP_TILE_FLOOR);
+                const bool sw = (tiles[(ty + 1) * mapW + (tx - 1)] == MAP_TILE_FLOOR);
+                const bool se = (tiles[(ty + 1) * mapW + (tx + 1)] == MAP_TILE_FLOOR);
+                if (!n || !s || !w || !e || !nw || !ne || !sw || !se) continue;
+
+                patrolPositions.push_back(TileCoordToWorldCenter(
+                    tx, ty, mapW, mapH, CELL_SIZE, originX, originZ, 1.0f));
+            }
+        }
+        MapPatrolAI_Initialize(patrolPositions);
+    }
+
+    //==============================
+    // ミニマップ用タイル
+    //==============================
+    {
+        const float minimapY = 10.0f;
+        for (int ty = 0; ty < mapH; ++ty)
+            for (int tx = 0; tx < mapW; ++tx)
+            {
+                if (tiles[ty * mapW + tx] != MAP_TILE_FLOOR) continue;
+                const XMFLOAT3 pos = TileCoordToWorldCenter(
+                    tx, ty, mapW, mapH, CELL_SIZE, originX, originZ, minimapY);
+                AddMapObject(KIND_MINIMAP_FLOOR, pos, Cube_CreateAABB(pos));
+            }
+        // ボス部屋にゴールマーカーは不要
+    }
 }
 
 void Map_Light_Reset()
@@ -1549,7 +1836,7 @@ bool Map_RaycastWalls(
 
     float nearestT = FLT_MAX;
     bool  hit = false;
-    
+
     for (const MapObject& obj : g_MapObjects)
     {
         if (obj.KindId != KIND_WALL &&
@@ -1620,6 +1907,44 @@ bool Map_RaycastWalls(
     outHitPos->z = start.z + dz * nearestT;
 
     return true;
+}
+
+//==============================================================================
+// 壁越しでないか判定
+//
+// ■役割
+// ・from から to へ壁レイキャストを飛ばし、途中に壁/床/天井があれば false
+// ・ロックオン継続判定などに使用する
+//
+// ■引数
+// ・from : 判定開始位置
+// ・to   : 判定終了位置
+//
+// ■戻り値
+// ・true  : 視線が通っている
+// ・false : 途中に遮蔽物がある
+//==============================================================================
+bool Map_HasLineOfSight(
+    const DirectX::XMFLOAT3& from,
+    const DirectX::XMFLOAT3& to)
+{
+    DirectX::XMFLOAT3 hitPos{};
+    if (!Map_RaycastWalls(from, to, &hitPos))
+        return true;
+
+    const float dxHit = hitPos.x - from.x;
+    const float dyHit = hitPos.y - from.y;
+    const float dzHit = hitPos.z - from.z;
+    const float hitDistSq = dxHit * dxHit + dyHit * dyHit + dzHit * dzHit;
+
+    const float dxTarget = to.x - from.x;
+    const float dyTarget = to.y - from.y;
+    const float dzTarget = to.z - from.z;
+    const float targetDistSq = dxTarget * dxTarget + dyTarget * dyTarget + dzTarget * dzTarget;
+
+    const float margin = 0.05f;
+
+    return hitDistSq + margin * margin >= targetDistSq;
 }
 
 

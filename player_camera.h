@@ -63,8 +63,8 @@ void Player_Camera_ToggleMode();
 
 bool Player_Camera_IsMouseLeftTrigger();
 bool Player_Camera_IsMouseLeftPressed();
+bool Player_Camera_IsMouseRightPressed();
 
 
 
 #endif // PLAYER_CAMERA_H
-

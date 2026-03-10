@@ -108,6 +108,11 @@ namespace
 
     std::uint32_t g_DungeonSeed = 12345u;
     static EnemyManager g_EnemyManager;
+
+    // ボス管理
+    static Enemy* g_pBossEnemy = nullptr; // ボスへの生ポインタ（生存中のみ有効）
+    static bool   g_BossDefeated = false;   // ボスが撃破されたか
+    static bool   g_IsBossRoom = false;   // ボス部屋フェーズ中フラグ
 }
 
 //==============================================================================
@@ -133,6 +138,8 @@ void Game_Initialize()
     Map_RegisterFloors();
 
     // エネミー初期化（マネージャ初期化）
+    g_pBossEnemy = nullptr;
+    g_BossDefeated = false;
     g_EnemyManager.Initialize();
     const auto& spawns = Map_GetEnemySpawnPositions();
     for (int i = 0; i < static_cast<int>(spawns.size()); ++i)
@@ -144,6 +151,13 @@ void Game_Initialize()
         else if (i % 2 == 0) type = EnemyType::Speed;
 
         g_EnemyManager.Spawn(spawns[i], type);
+    }
+
+    // ボス部屋フェーズのときのみボスをスポーン
+    if (g_IsBossRoom)
+    {
+        const int bossIdx = g_EnemyManager.Spawn(Map_GetBossSpawnPosition(), EnemyType::Boss);
+        g_pBossEnemy = &g_EnemyManager.GetEnemy(bossIdx);
     }
 
     // プレイヤー追従カメラ
@@ -159,6 +173,121 @@ void Game_Initialize()
 
 
     ItemManager_Initialize();
+}
+
+//==============================================================================
+// エネミー再スポーン
+//
+// ■役割
+// ・ダンジョン再生成後に EnemyManager を使って敵を再配置する
+// ・Game_Initialize と同じ種別割り振りロジックで生成する
+// ・Game_Manager.cpp のゴール到達処理から呼ばれる
+//==============================================================================
+void Game_RespawnEnemies()
+{
+    g_pBossEnemy = nullptr;   // 旧ポインタを先に無効化
+    g_BossDefeated = false;
+    g_EnemyManager.Initialize(); // 既存エネミーを全削除
+
+    const auto& spawns = Map_GetEnemySpawnPositions();
+    for (int i = 0; i < static_cast<int>(spawns.size()); ++i)
+    {
+        EnemyType type = EnemyType::Normal;
+        if (i % 5 == 0) type = EnemyType::Tank;
+        else if (i % 3 == 0) type = EnemyType::Sniper;
+        else if (i % 2 == 0) type = EnemyType::Speed;
+
+        g_EnemyManager.Spawn(spawns[i], type);
+    }
+
+    // ボス部屋フェーズのときのみボスをスポーン
+    if (g_IsBossRoom)
+    {
+        const int bossIdx = g_EnemyManager.Spawn(Map_GetBossSpawnPosition(), EnemyType::Boss);
+        g_pBossEnemy = &g_EnemyManager.GetEnemy(bossIdx);
+    }
+}
+
+//==============================================================================
+// ボス生存判定
+//
+// ■役割
+// ・ボスが撃破済みかどうかを返す
+// ・Game_Manager.cpp のゴール到達条件チェックに使用
+//
+// ■戻り値
+// ・true  : ボスが生存中（ゴール無効）
+// ・false : ボスが撃破済み（ゴール有効）
+//==============================================================================
+bool Game_IsBossAlive()
+{
+    return !g_BossDefeated;
+}
+
+//==============================================================================
+// ボス部屋モード設定
+//
+// ■役割
+// ・true のとき Game_RespawnEnemies / Game_Initialize でボスをスポーンする
+// ・false のとき通常ダンジョンではボスを出現させない
+//==============================================================================
+void Game_SetBossRoomMode(bool isBossRoom)
+{
+    g_IsBossRoom = isBossRoom;
+}
+
+//==============================================================================
+// ロックオン：カメラ中心レイに最も近いエネミーのワールド位置を返す（レイキャスト）
+//==============================================================================
+bool Game_GetLockOnWorldPos(XMFLOAT3* outPos)
+{
+    const int count = g_EnemyManager.GetCount();
+    if (count == 0) return false;
+
+    XMFLOAT3 camPosF = Player_Camera_GetPosition();
+    XMFLOAT3 camFrontF = Player_Camera_GetFront();
+
+    XMVECTOR rayOrigin = XMLoadFloat3(&camPosF);
+    XMVECTOR rayDir = XMVector3Normalize(XMLoadFloat3(&camFrontF));
+
+    constexpr float MAX_LOCK_DIST = 50.0f;
+    constexpr float MAX_ANGLE_DEG = 15.0f;
+    const float cosMaxAngle = cosf(XMConvertToRadians(MAX_ANGLE_DEG));
+
+    float bestCos = cosMaxAngle;
+    int   bestIdx = -1;
+
+    for (int i = 0; i < count; ++i)
+    {
+        const Enemy& e = g_EnemyManager.GetEnemy(i);
+        if (!e.IsAlive()) continue;
+
+        XMFLOAT3 enemyPosF = e.GetPosition();
+        enemyPosF.y += 0.8f;
+
+        XMVECTOR ePos = XMLoadFloat3(&enemyPosF);
+        XMVECTOR toEnemy = ePos - rayOrigin;
+
+        float dist = XMVectorGetX(XMVector3Length(toEnemy));
+        if (dist <= 0.0f || dist > MAX_LOCK_DIST) continue;
+
+        float cosAngle = XMVectorGetX(XMVector3Dot(rayDir, toEnemy / dist));
+        if (cosAngle <= bestCos) continue;
+
+        XMFLOAT3 rayStart = camPosF;
+        rayStart.y += 0.1f;
+
+        if (!Map_HasLineOfSight(rayStart, enemyPosF))
+            continue;
+
+        bestCos = cosAngle;
+        bestIdx = i;
+    }
+
+    if (bestIdx < 0) return false;
+
+    *outPos = g_EnemyManager.GetEnemy(bestIdx).GetPosition();
+    return true;
 }
 
 //==============================================================================
@@ -208,7 +337,37 @@ void Game_Update(double elapsed_time)
     // エネミー側でプレイヤー衝突判定（ダメージ＋ノックバック）を実施
     //複数種版に変更
     g_EnemyManager.Update(elapsed_time);
+
+    // ボス撃破チェック（RemoveDead の前に実施：削除後はポインタが無効になるため）
+    if (!g_BossDefeated && g_pBossEnemy && !g_pBossEnemy->IsAlive())
+    {
+        g_BossDefeated = true;
+        g_pBossEnemy = nullptr;
+    }
+
     g_EnemyManager.RemoveDead();
+
+    // ミサイル爆発エリアダメージ（BulletManager に蓄積された爆発を消費）
+    {
+        const int ec = Bullet_GetPendingExplosionCount();
+        for (int i = 0; i < ec; ++i)
+        {
+            const ExplosionEvent exp = Bullet_GetPendingExplosion(i);
+            const XMVECTOR vCenter = XMLoadFloat3(&exp.center);
+            const int enemyCnt = g_EnemyManager.GetCount();
+            for (int j = 0; j < enemyCnt; ++j)
+            {
+                Enemy& e = g_EnemyManager.GetEnemy(j);
+                if (!e.IsAlive()) continue;
+                const float dist = XMVectorGetX(XMVector3Length(
+                    XMLoadFloat3(&e.GetPosition()) - vCenter));
+                if (dist <= exp.radius)
+                    e.Damage(exp.damage);
+            }
+        }
+        Bullet_ClearPendingExplosions();
+    }
+
     ItemManager_Update();
 
     // マップオブジェクトと弾の AABB 当たり判定
@@ -334,7 +493,7 @@ void Game_Draw()
     EnemyBullet_Draw();
     BulletHitEffect_Draw();
 
- 
+
 
     //==========================================================
     // デバッグ: AABBを可視化
@@ -365,6 +524,56 @@ void Game_Draw()
     MiniMap_Draw2D();   // 画面に貼る
     //HUD描画
     HUD_Draw();
+
+    // ---- ロックオンサイト（2Dスプライト・スクリーン投影）----
+    {
+        XMFLOAT3 lockOnPos;
+        if (Game_GetLockOnWorldPos(&lockOnPos))
+        {
+            const float W = static_cast<float>(Direct3D_GetBackBufferWidth());
+            const float H = static_cast<float>(Direct3D_GetBackBufferHeight());
+
+            XMMATRIX view = XMLoadFloat4x4(&Player_Camera_GetViewMatrix());
+            XMMATRIX proj = XMLoadFloat4x4(&Player_Camera_GetProjectionMatrix());
+
+            XMVECTOR camPos = XMLoadFloat3(&Player_Camera_GetPosition());
+            XMVECTOR ePos = XMLoadFloat3(&lockOnPos);
+            float dist = XMVectorGetX(XMVector3Length(ePos - camPos));
+
+            // ワールド座標 → スクリーン座標
+            XMVECTOR sc = XMVector3Project(
+                ePos, 0.0f, 0.0f, W, H, 0.0f, 1.0f,
+                proj, view, XMMatrixIdentity()
+            );
+            const float sx = XMVectorGetX(sc);
+            const float sy = XMVectorGetY(sc);
+            const float sz = XMVectorGetZ(sc);
+
+            // カメラ前方かつ画面内のみ描画
+            if (sz > 0.0f && sz < 1.0f &&
+                sx > 0.0f && sx < W &&
+                sy > 0.0f && sy < H)
+            {
+                const int sightTex = HUD_GetSightTexture();
+                if (sightTex >= 0)
+                {
+                    // 距離でスケール（近い=大きい、遠い=小さい）
+                    float drawSize = 600.0f / dist;
+                    if (drawSize > 64.0f) drawSize = 64.0f;
+                    if (drawSize < 8.0f) drawSize = 8.0f;
+
+                    Sprite_Draw(
+                        sightTex,
+                        sx - drawSize * 0.5f,
+                        sy - drawSize * 0.5f,
+                        drawSize,
+                        drawSize,
+                        { 1.0f, 1.0f, 1.0f, 0.9f }
+                    );
+                }
+            }
+        }
+    }
 }
 
 //==============================================================================
@@ -399,4 +608,5 @@ void Game_Finalize()
     EnemyBullet_Finalize();
 
 }
+
 

@@ -59,8 +59,9 @@ struct AABB
 //-----------------------------
 struct Hit
 {
-    bool               isHit;  // 衝突しているかどうか
-    DirectX::XMFLOAT3  normal; // めり込みを解消するための法線方向
+    bool               isHit;       // 衝突しているかどうか
+    DirectX::XMFLOAT3  normal;      // めり込みを解消するための法線方向
+    float              penetration; // めり込み深度
 };
 
 //=============================

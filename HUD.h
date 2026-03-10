@@ -20,4 +20,7 @@ void HUD_AddCollectedItem(ItemType type);
 void HUD_Update(double elapsed_time);   // モード表示タイマー更新
 void HUD_NotifyModeChange(bool isBeam); // 武器モード切り替え通知
 
+// 現在の武器モードに対応するサイトテクスチャIDを返す（Billboard描画用）
+int HUD_GetSightTexture();
+
 #endif // HUD_H

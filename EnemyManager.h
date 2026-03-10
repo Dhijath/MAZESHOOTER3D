@@ -31,6 +31,7 @@ enum class EnemyType
     Tank,    // タンク型（EnemyTank）
     Speed,   // スピード型（EnemySpeed）
     Sniper,  // 射撃型（EnemySniper）
+    Boss,    // ボス（EnemyBoss）HP8000・巨大モデル
 };
 
 class EnemyManager

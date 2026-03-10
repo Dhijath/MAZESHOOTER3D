@@ -26,6 +26,9 @@
 #include "Audio.h"
 #include "HUD.h"
 #include "score.h"
+#include "game.h"
+#include "billboard.h"
+#include "PlayerWeapon.h"
 using namespace DirectX;
 
 namespace
@@ -37,7 +40,14 @@ namespace
     XMFLOAT3 g_PlayerStartPosition = {};
     XMFLOAT3 g_PlayerFront = { 0.0f, 0.0f, 1.0f };
     XMFLOAT3 g_PlayerVelocity = {};
-    MODEL* g_pPlayerModel = nullptr;
+    MODEL* g_pPlayerModel = nullptr;  // ボディパーツモデル
+    MODEL* g_pThrusterModel = nullptr;  // スラスターパーツモデル
+    MODEL* g_pHeadModel = nullptr;      // 頭パーツモデル
+
+    MODEL* g_pBarrelModel = nullptr;  // 腕パーツモデル 銃
+    MODEL* g_pShieldModel = nullptr;  // 腕パーツモデル　シールド
+
+
     bool g_IsJump = false;
     bool g_PlayerEnable = true;
 
@@ -59,27 +69,29 @@ namespace
     const float PLAYER_HALF_WIDTH_X = 0.5f / 2.0f;
     const float PLAYER_HALF_WIDTH_Z = 0.75f / 2.0f;
 
+    static XMFLOAT3 g_PlayerModelHalfExtents = { 0.25f, 0.25f, 0.375f };
+    static XMFLOAT3 g_PlayerModelCenterOffset = { 0.0f,  0.0f,  0.0f };
+
     //--------------------------------------------------------------------------
     // 火器関連ステータス
     //--------------------------------------------------------------------------
-    bool   g_IsBeamMode = false;                    // 武器モード（true=ビーム / false=通常弾）
-    double g_BeamCooldown = 0.0;                    // ビームの発射間隔タイマー（秒）
-    constexpr double BEAM_FIRE_INTERVAL = 0.001;    // ビームの発射間隔（秒）
     float g_PlayerDamageMultiplier = 1.0f;          // プレイヤーの攻撃力倍率（強化システム用）
-    constexpr float BEAM_ENERGY_MAX = 300.0f;       // ビームエネルギー最大値
-    constexpr float BEAM_ENERGY_COST = 1.0f;        // ビーム1発のエネルギーコスト
-    float g_BeamEnergy = BEAM_ENERGY_MAX;           // 現在のビームエネルギー
 
     //--------------------------------------------------------------------------
-    // SE関連
+    // 武器システム
+    // ・ビーム    : 固定（右クリック専用）
+    // ・通常スロット : Normal/Shotgun/Missile を E キーで切り替え
     //--------------------------------------------------------------------------
-    int g_PlayerShootSE = -1;  // 通常弾射撃SE
-    int g_PlayerModeSwitchToBeamSE = -1;  // ビームモード切り替えSE
-    int g_PlayerModeSwitchToNormalSE = -1;  // 通常弾モード切り替えSE
-    int g_PlayerBeamShootSE = -1;  // ビーム発射SE
+    WeaponBeam* g_pBeamWeapon = nullptr;  // ビーム（固定・右クリック）
 
-    double g_BeamShootSECooldown = 0.0;            // ビーム発射SEのクールダウンタイマー（秒）
-    constexpr double BEAM_SHOOT_SE_INTERVAL = 0.1; // ビーム発射SEの再生間隔（秒）
+    static constexpr int NORMAL_WEAPON_COUNT = 3;
+    PlayerWeapon* g_NormalWeapons[NORMAL_WEAPON_COUNT] = {};  // [0]Normal [1]Shotgun [2]Missile
+    int                  g_NormalWeaponIdx = 0;                       // E キーで切り替え
+
+    //--------------------------------------------------------------------------
+    // SE関連（通常スロット切り替え音のみ。射撃SEは各武器クラスが管理）
+    //--------------------------------------------------------------------------
+    int g_PlayerModeSwitchToNormalSE = -1;  // 通常スロット切り替えSE
 
     //--------------------------------------------------------------------------
     // パーティクル（スラスター）
@@ -88,19 +100,163 @@ namespace
     ThrusterEmitter* g_PlayerThrusterEmitter = nullptr; // 後方噴射用エミッター
 
     // ローカルオフセット（right/up/front 基底で組み立て）
+    // Initialize() でスラスターモデルの AABB から自動計算される
     // X: 右+ / 左-  Y: 上+ / 下-  Z: 前+ / 後-
-    const XMFLOAT3 g_ThrusterOffsetLocal = { 0.0f, 0.30f, -0.25f };
+    XMFLOAT3 g_ThrusterOffsetLocal = { 0.0f, 0.30f, -0.25f };
+
+    // モデル描画の Y オフセット（Initialize と Draw で共用）
+    constexpr float PLAYER_HEIGHT_OFFSET = 0.15f;
+
+
+    float g_ThrusterLocalYaw = 0.0f;
+    bool  g_PlayerBodyFollowCamera = true;  // true: ボディがカメラ方向 / false: 移動方向
+
+    static XMMATRIX Player_GetBodyRotationMatrix()
+    {
+        float angle = -atan2f(g_PlayerFront.z, g_PlayerFront.x) + XMConvertToRadians(180.0f);
+        const float pitchDeg = 0.0f;
+        const float rollDeg = 0.0f;
+
+        XMMATRIX rotFix = XMMatrixRotationZ(XMConvertToRadians(rollDeg)) *
+            XMMatrixRotationX(XMConvertToRadians(pitchDeg));
+        XMMATRIX rotYawFix = XMMatrixRotationY(XMConvertToRadians(90.0f));
+        XMMATRIX rotY = XMMatrixRotationY(angle);
+
+        return rotFix * rotY * rotYawFix;
+    }
+
+    static XMMATRIX Player_GetThrusterWorldMatrix()
+    {
+        XMMATRIX bodyRot = Player_GetBodyRotationMatrix();
+
+        const float heightOffset = PLAYER_HEIGHT_OFFSET;
+        const XMFLOAT3 bodyWorldPos = {
+            g_PlayerPosition.x,
+            g_PlayerPosition.y + heightOffset,
+            g_PlayerPosition.z
+        };
+
+        const AABB bodyAABB = ModelGetAABB(g_pPlayerModel, bodyWorldPos);
+        const AABB thrusterLocal = ModelGetAABB(g_pThrusterModel, { 0.0f, 0.0f, 0.0f });
+
+        XMMATRIX thrusterLocalRot = XMMatrixRotationY(g_ThrusterLocalYaw);
+
+        constexpr float THRUSTER_FORWARD_OFFSET = 0.15f;
+
+        XMVECTOR playerFront = XMVector3Normalize(XMLoadFloat3(&g_PlayerFront));
+
+        XMMATRIX thrusterTrans = XMMatrixTranslation(
+            g_PlayerPosition.x + XMVectorGetX(playerFront) * THRUSTER_FORWARD_OFFSET,
+            bodyAABB.min.y - thrusterLocal.max.y - 0.01f,
+            g_PlayerPosition.z + XMVectorGetZ(playerFront) * THRUSTER_FORWARD_OFFSET
+        );
+
+        return thrusterLocalRot * bodyRot * thrusterTrans;
+    }
+
+    static XMMATRIX Player_GetBarrelWorldMatrix()
+    {
+        constexpr float BARREL_FLIP_DEG = 180.0f;  // 上下反転（Z軸）
+        constexpr float BARREL_LEAN_DEG = -30.0f;  // 左傾き（Z軸）調整可
+        constexpr float BARREL_TILT_DEG = 0.0f;  // ナナメ角度（X軸）調整可
+        constexpr float BARREL_SIDE_X = 0.40f;  // 右横オフセット（調整可）
+
+        const XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+
+        // ボディ右方向（ワールド）を計算して横オフセット適用
+        XMVECTOR playerFront = XMVector3Normalize(XMLoadFloat3(&g_PlayerFront));
+        XMVECTOR playerRight = XMVector3Normalize(XMVector3Cross(up, playerFront));
+
+        const XMFLOAT3 bodyWorldPos = {
+            g_PlayerPosition.x,
+            g_PlayerPosition.y + PLAYER_HEIGHT_OFFSET,
+            g_PlayerPosition.z
+        };
+        const AABB bodyAABB = ModelGetAABB(g_pPlayerModel, bodyWorldPos);
+
+        // バレル原点位置（ボディ底面・右側）
+        const XMFLOAT3 barrelOriginPos = {
+            g_PlayerPosition.x + XMVectorGetX(playerRight) * BARREL_SIDE_X,
+            bodyAABB.min.y,
+            g_PlayerPosition.z + XMVectorGetZ(playerRight) * BARREL_SIDE_X
+        };
+        XMMATRIX barrelTrans = XMMatrixTranslation(
+            barrelOriginPos.x, barrelOriginPos.y, barrelOriginPos.z);
+
+        // 照準方向：ロックオン対象 or カメラ前方 XZ
+        XMVECTOR aimDir;
+        XMFLOAT3 lockOnPos;
+        if (Game_GetLockOnWorldPos(&lockOnPos))
+        {
+            XMVECTOR toTarget = XMLoadFloat3(&lockOnPos)
+                - XMLoadFloat3(&barrelOriginPos);
+            aimDir = XMVector3Normalize(toTarget);
+        }
+        else
+        {
+            XMFLOAT3 camFront = Player_Camera_GetFront();
+            aimDir = XMVector3Normalize(XMVectorSet(camFront.x, 0.0f, camFront.z, 0.0f));
+        }
+
+        // ローカル -Z がマズル方向なので aimZ を反転（バレルモデルのデフォルト向き対応）
+        XMVECTOR aimZ = XMVectorNegate(aimDir);
+        XMVECTOR aimX = XMVector3Normalize(XMVector3Cross(up, aimZ));
+        if (XMVectorGetX(XMVector3LengthSq(aimX)) < 0.001f)
+            aimX = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
+        XMVECTOR aimY = XMVector3Cross(aimZ, aimX);
+
+        XMFLOAT3 ax, ay, az;
+        XMStoreFloat3(&ax, aimX);
+        XMStoreFloat3(&ay, aimY);
+        XMStoreFloat3(&az, aimZ);
+
+        // 行ベクトル形式：ローカル X/Y/Z がワールド aimX/aimY/aimZ に対応
+        XMMATRIX aimRot(
+            ax.x, ax.y, ax.z, 0.0f,
+            ay.x, ay.y, ay.z, 0.0f,
+            az.x, az.y, az.z, 0.0f,
+            0.0f, 0.0f, 0.0f, 1.0f
+        );
+
+        // 外観補正（上下反転 + 左傾き）：Z 軸回転なのでマズル方向は変わらない
+        XMMATRIX localRot =
+            XMMatrixRotationZ(XMConvertToRadians(BARREL_FLIP_DEG + BARREL_LEAN_DEG)) *
+            XMMatrixRotationX(XMConvertToRadians(BARREL_TILT_DEG));
+
+        return localRot * aimRot * barrelTrans;
+    }
+
+    static XMMATRIX Player_GetHeadWorldMatrix()
+    {
+        XMMATRIX bodyRot = Player_GetBodyRotationMatrix();
+
+        const XMFLOAT3 bodyWorldPos =
+        {
+            g_PlayerPosition.x,
+            g_PlayerPosition.y + PLAYER_HEIGHT_OFFSET,
+            g_PlayerPosition.z
+        };
+
+        const AABB bodyAABB = ModelGetAABB(g_pPlayerModel, bodyWorldPos);
+        const AABB headLocal = ModelGetAABB(g_pHeadModel, { 0.0f, 0.0f, 0.0f });
+
+        XMMATRIX headTrans = XMMatrixTranslation(
+            g_PlayerPosition.x,
+            bodyAABB.max.y - headLocal.min.y,
+            g_PlayerPosition.z
+        );
+
+        return bodyRot * headTrans;
+    }
+
 
     //--------------------------------------------------------------------------
     // 壁押し戻し（現在位置での OBB vs 壁AABB を使い、押し戻しベクトルを決定）
     //--------------------------------------------------------------------------
-    static bool ResolveWallCollisionAtPosition(XMVECTOR* ioPos, XMVECTOR* ioVel) // 壁(KindId=2)との衝突を解決し、押し戻しで位置/速度を補正する。ioPos=位置(入出力) ioVel=速度(入出力) 戻り値=trueで衝突あり
+    static bool ResolveWallCollisionAtPosition(XMVECTOR* ioPos, XMVECTOR* ioVel)
     {
-        XMFLOAT3 currentPos;
-        XMStoreFloat3(&currentPos, *ioPos);
-
         float maxPenetration = 0.0f;
-        XMFLOAT3 bestSeparation = { 0.0f, 0.0f, 0.0f };
+        XMVECTOR bestNormal = XMVectorZero();
         bool foundCollision = false;
 
         for (int i = 0; i < Map_GetObjectsCount(); i++)
@@ -113,93 +269,25 @@ namespace
             Hit hit = Collision_IsHitOBB_AABB(playerOBB, mo->Aabb);
             if (!hit.isHit) continue;
 
-            const AABB& wall = mo->Aabb;
-            float separationX = 0.0f;
-            float separationZ = 0.0f;
-
-            float playerLeft = currentPos.x - PLAYER_HALF_WIDTH_X;
-            float playerRight = currentPos.x + PLAYER_HALF_WIDTH_X;
-
-            if (playerRight > wall.min.x && playerLeft < wall.max.x)
+            if (hit.penetration > maxPenetration)
             {
-                float pushLeft = wall.min.x - playerRight;
-                float pushRight = wall.max.x - playerLeft;
-                separationX = (fabsf(pushLeft) < fabsf(pushRight)) ? pushLeft : pushRight;
-            }
-
-            float playerNear = currentPos.z - PLAYER_HALF_WIDTH_Z;
-            float playerFar = currentPos.z + PLAYER_HALF_WIDTH_Z;
-
-            if (playerFar > wall.min.z && playerNear < wall.max.z)
-            {
-                float pushNear = wall.min.z - playerFar;
-                float pushFar = wall.max.z - playerNear;
-                separationZ = (fabsf(pushNear) < fabsf(pushFar)) ? pushNear : pushFar;
-            }
-
-            float absX = fabsf(separationX);
-            float absZ = fabsf(separationZ);
-
-            if (absX > 0.0001f || absZ > 0.0001f)
-            {
-                float penetration = (absX < absZ) ? absX : absZ;
-
-                if (penetration > maxPenetration)
-                {
-                    maxPenetration = penetration;
-                    foundCollision = true;
-
-                    if (absX < absZ)
-                        bestSeparation = { separationX, 0.0f, 0.0f };
-                    else
-                        bestSeparation = { 0.0f, 0.0f, separationZ };
-                }
+                maxPenetration = hit.penetration;
+                bestNormal = XMLoadFloat3(&hit.normal);
+                foundCollision = true;
             }
         }
 
         if (foundCollision)
         {
-            *ioPos = XMVectorAdd(*ioPos, XMLoadFloat3(&bestSeparation));
+            *ioPos -= bestNormal * maxPenetration;
 
-            XMFLOAT3 vel;
-            XMStoreFloat3(&vel, *ioVel);
-
-            const float restitution = -0.1f;
-
-            if (fabsf(bestSeparation.x) > 0.0001f)
-                vel.x *= restitution;
-            if (fabsf(bestSeparation.z) > 0.0001f)
-                vel.z *= restitution;
-
-            *ioVel = XMLoadFloat3(&vel);
+            float velDotN = XMVectorGetX(XMVector3Dot(*ioVel, bestNormal));
+            if (velDotN > 0.0f)
+                *ioVel -= bestNormal * velDotN;
         }
 
         return foundCollision;
-
     }
-    //--------------------------------------------------------------------------
-    // ビームモードの状態遷移フラグの管理
-    //--------------------------------------------------------------------------
-
-    static void Player_SetBeamMode(bool toBeam, bool playSE, bool notifyHUD)
-    {
-        if (g_IsBeamMode == toBeam) return;
-
-        g_IsBeamMode = toBeam;
-
-        if (playSE)
-        {
-            const int switchSE = g_IsBeamMode ? g_PlayerModeSwitchToBeamSE : g_PlayerModeSwitchToNormalSE;
-            if (switchSE >= 0) PlayAudio(switchSE, false);
-        }
-
-        if (notifyHUD)
-        {
-            HUD_NotifyModeChange(g_IsBeamMode);
-        }
-    }
-
-
 
 
     //--------------------------------------------------------------------------
@@ -256,12 +344,14 @@ void Player_Initialize(const DirectX::XMFLOAT3& position, const DirectX::XMFLOAT
     g_PlayerVelocity = { 0.0f, 0.0f, 0.0f };
     g_PlayerEnable = true;
 
+
+    g_ThrusterLocalYaw = 0.0f;
+
     g_PlayerDamageMultiplier = 1.0f;
     g_PlayerSpeedMultiplier = 1.0f;
 
 
     g_PlayerHP = PLAYER_MAX_HP;
-    g_BeamEnergy = BEAM_ENERGY_MAX;
     g_InvincibleTimer = 0.0;
 
     Mouse_SetMode(MOUSE_POSITION_MODE_RELATIVE);
@@ -270,15 +360,67 @@ void Player_Initialize(const DirectX::XMFLOAT3& position, const DirectX::XMFLOAT
     XMStoreFloat3(&g_PlayerFront, XMVector3Normalize(XMLoadFloat3(&front)));
 
     g_PlayerWhightTexID = Texture_Load(L"resource/texture/Player_white.png");
-    g_pPlayerModel = ModelLoad("resource/Models/enemy.fbx", 0.08);
+    // プレイヤーモデルを body.fbx で構成する
+    g_pPlayerModel = ModelLoad("resource/Models/body.fbx", 0.3f);
+    g_pThrusterModel = ModelLoad("resource/Models/Thruster.fbx", 0.3f);
+    g_pBarrelModel = ModelLoad("resource/Models/Barrel.fbx", 0.15f);
+    g_pHeadModel = ModelLoad("resource/Models/Head.fbx", 0.3f);
+    g_pShieldModel = ModelLoad("resource/Models/Shield.fbx", 0.15f);
+
+    // OBBをボディモデルのAABBから自動計算する
+    {
+        AABB local = ModelGetAABB(g_pPlayerModel, { 0.0f, 0.0f, 0.0f });
+        float ex = (local.max.x - local.min.x) * 0.5f;
+        float ey = (local.max.y - local.min.y) * 0.5f;
+        float ez = (local.max.z - local.min.z) * 0.5f;
+        float cx = (local.max.x + local.min.x) * 0.5f;
+        float cy = (local.max.y + local.min.y) * 0.5f;
+        float cz = (local.max.z + local.min.z) * 0.5f;
+        // angle+180 + rotYawFix(+90) = 実質 RotY(-90): model(x,y,z) -> OBB(z, y, -x)
+        // OBB front(z) = model local -X,  OBB right(x) = model local +Z
+        g_PlayerModelHalfExtents = { ez, ey, ex };   // 半径は絶対値なので変わらず
+        g_PlayerModelCenterOffset = { cz, cy, -cx }; // 符号が前後反転
+    }
+
+
+
+    // スラスターエミッターの位置をスラスターモデルの底面から自動計算する
+    {
+        const AABB bodyLocal = ModelGetAABB(g_pPlayerModel, { 0.0f, 0.0f, 0.0f });
+        const AABB thrusterLocal = ModelGetAABB(g_pThrusterModel, { 0.0f, 0.0f, 0.0f });
+
+        // スラスター中心 Y（g_PlayerPosition.y 基準）
+        // スラスター原点 = PLAYER_HEIGHT_OFFSET + bodyLocal.min.y - thrusterLocal.max.y - 0.01f
+        // スラスター中心 = 原点 + (max.y + min.y) / 2
+        const float thrusterOriginY = PLAYER_HEIGHT_OFFSET
+            + bodyLocal.min.y
+            - thrusterLocal.max.y
+            - 0.01f;
+        const float thrusterCenterY = thrusterOriginY
+            + (thrusterLocal.max.y + thrusterLocal.min.y) * 0.5f;
+
+        g_ThrusterOffsetLocal = { 0.0f, thrusterCenterY, 0.0f };
+    }
 
     //--------------------------------------------------------------------------
-    // SE読み込み
+    // 武器システム初期化
     //--------------------------------------------------------------------------
-    g_PlayerShootSE = LoadAudioWithVolume("resource/sound/maou_se_battle_gun05.wav", 0.5f); // 通常弾射撃SE
-    g_PlayerModeSwitchToBeamSE = LoadAudioWithVolume("resource/sound/mode_switch_beam.wav", 0.5f); // ビームモード切り替えSE
-    g_PlayerModeSwitchToNormalSE = LoadAudioWithVolume("resource/sound/mode_switch_normal.wav", 0.5f); // 通常弾モード切り替えSE
-    g_PlayerBeamShootSE = LoadAudioWithVolume("resource/sound/beam_shoot.wav", 0.5f); // ビーム発射SE
+    // ビーム（固定）
+    g_pBeamWeapon = new WeaponBeam();
+    g_pBeamWeapon->Initialize();
+
+    // 通常スロット
+    g_NormalWeaponIdx = 0;
+    g_NormalWeapons[0] = new WeaponNormal();
+    g_NormalWeapons[1] = new WeaponShotgun();
+    g_NormalWeapons[2] = new WeaponMissile();
+    for (int i = 0; i < NORMAL_WEAPON_COUNT; ++i)
+        g_NormalWeapons[i]->Initialize();
+
+    //--------------------------------------------------------------------------
+    // SE読み込み（通常スロット切り替えSEのみ。射撃SEは各武器クラスが管理）
+    //--------------------------------------------------------------------------
+    g_PlayerModeSwitchToNormalSE = LoadAudioWithVolume("resource/sound/mode_switch_normal.wav", 0.5f);
 
     PadLogger_Initialize();
 
@@ -289,14 +431,15 @@ void Player_Initialize(const DirectX::XMFLOAT3& position, const DirectX::XMFLOAT
 
     XMVECTOR playerVec = XMLoadFloat3(&g_PlayerPosition);
 
-    g_PlayerThrusterEmitter = new ThrusterEmitter(playerVec, 320.0, true);
+    g_PlayerThrusterEmitter = new ThrusterEmitter(playerVec, 1024, true);
     g_PlayerThrusterEmitter->SetParticleTextureId(g_PlayerParticleTexID);
 
     // 見た目パラメータ（ここを調整して表現を作る）
-    g_PlayerThrusterEmitter->SetScaleRange(0.0005f, 0.15f);    // パーティクルのスケール範囲（最小, 最大）
-    g_PlayerThrusterEmitter->SetSpeedRange(2.0f, 6.0f);         // パーティクルの速度範囲（最小, 最大）
-    g_PlayerThrusterEmitter->SetLifeRange(0.18f, 0.45f);        // パーティクルの寿命範囲（最小, 最大）秒
-    g_PlayerThrusterEmitter->SetConeAngleDeg(18.0f);            // 放出コーン角度（度）
+    g_PlayerThrusterEmitter->SetScaleRange(0.001f, 0.11f);       // パーティクルのスケール範囲（最小, 最大）
+    g_PlayerThrusterEmitter->SetSpeedRange(1.2f, 2.0f);         // パーティクルの速度範囲（最小, 最大）
+    g_PlayerThrusterEmitter->SetLifeRange(0.18f, 0.26f);        // パーティクルの寿命範囲（最小, 最大）秒
+    g_PlayerThrusterEmitter->SetConeAngleDeg(26.0f);            // 放出コーン角度（度）
+    g_PlayerThrusterEmitter->SetAspectRatio(3.0f);              // 横長比率（幅/高さ）
     g_PlayerThrusterEmitter->SetColor({ 1.0f, 0.5f, 2.5f, 1.0f }); // パーティクルの色（R,G,B,A）
     g_PlayerThrusterEmitter->SetUVRect({ 0.0f, 0.0f, 80.0f, 80.0f }); // UV矩形（x, y, 幅, 高さ）
     g_PlayerThrusterEmitter->SetLocalOffset(g_ThrusterOffsetLocal); // エミッターのローカルオフセット座標
@@ -308,6 +451,19 @@ void Player_Initialize(const DirectX::XMFLOAT3& position, const DirectX::XMFLOAT
 void Player_Finalize() // プレイヤーの終了処理（モデル解放・スラスター破棄・SE解放）
 {
     ModelRelease(g_pPlayerModel);
+    g_pPlayerModel = nullptr;
+
+    ModelRelease(g_pThrusterModel);
+    g_pThrusterModel = nullptr;
+
+    ModelRelease(g_pHeadModel);
+    g_pHeadModel = nullptr;
+
+    ModelRelease(g_pBarrelModel);
+    g_pBarrelModel = nullptr;
+
+    ModelRelease(g_pShieldModel);
+    g_pShieldModel = nullptr;
 
     if (g_PlayerThrusterEmitter)
     {
@@ -315,18 +471,33 @@ void Player_Finalize() // プレイヤーの終了処理（モデル解放・ス
         g_PlayerThrusterEmitter = nullptr;
     }
 
-    //--------------------------------------------------------------------------
-    // SE解放
-    //--------------------------------------------------------------------------
-    UnloadAudio(g_PlayerShootSE);            // 通常弾射撃SE解放
-    UnloadAudio(g_PlayerModeSwitchToBeamSE);   // ビームモード切り替えSE解放
-    UnloadAudio(g_PlayerModeSwitchToNormalSE); // 通常弾モード切り替えSE解放
-    UnloadAudio(g_PlayerBeamShootSE);        // ビーム発射SE解放
+    Texture_Release(g_PlayerParticleTexID);
+    g_PlayerParticleTexID = -1;
 
-    g_PlayerShootSE = -1;
-    g_PlayerModeSwitchToBeamSE = -1;
+    //--------------------------------------------------------------------------
+    // 武器システム解放
+    //--------------------------------------------------------------------------
+    if (g_pBeamWeapon)
+    {
+        g_pBeamWeapon->Finalize();
+        delete g_pBeamWeapon;
+        g_pBeamWeapon = nullptr;
+    }
+    for (int i = 0; i < NORMAL_WEAPON_COUNT; ++i)
+    {
+        if (g_NormalWeapons[i])
+        {
+            g_NormalWeapons[i]->Finalize();
+            delete g_NormalWeapons[i];
+            g_NormalWeapons[i] = nullptr;
+        }
+    }
+
+    //--------------------------------------------------------------------------
+    // SE解放（通常スロット切り替えSEのみ）
+    //--------------------------------------------------------------------------
+    UnloadAudio(g_PlayerModeSwitchToNormalSE);
     g_PlayerModeSwitchToNormalSE = -1;
-    g_PlayerBeamShootSE = -1;
 }
 
 //==============================================================================
@@ -372,6 +543,7 @@ void Player_Update(double elapsed_time)
 
     {
         XMVECTOR posY = position + XMVectorSet(0.0f, XMVectorGetY(gravityVelocity), 0.0f, 0.0f);
+
 
         XMFLOAT3 tempPos;
         XMStoreFloat3(&tempPos, posY);
@@ -429,31 +601,23 @@ void Player_Update(double elapsed_time)
     if (XMVectorGetX(XMVector3LengthSq(moveDir)) > 0.0f)
     {
         moveDir = XMVector3Normalize(moveDir);
+        velocity += moveDir * static_cast<float>(2000.0 / 90.0 * elapsed_time) * g_PlayerSpeedMultiplier;
+    }
 
-        float dot = XMVectorGetX(XMVector3Dot(XMLoadFloat3(&g_PlayerFront), moveDir));
-        float angle = acosf(std::clamp(dot, -1.0f, 1.0f));
+    // K キーでボディの向きモード切り替え
+    if (KeyLogger_IsTrigger(KK_K))
+        g_PlayerBodyFollowCamera = !g_PlayerBodyFollowCamera;
 
-        const float ROT_SPEED = XM_2PI * 2.0f * static_cast<float>(elapsed_time);
-
-        if (angle < ROT_SPEED)
-        {
-            front = moveDir;
-        }
-        else
-        {
-            XMMATRIX r = XMMatrixIdentity();
-
-            if (XMVectorGetY(XMVector3Cross(XMLoadFloat3(&g_PlayerFront), moveDir)) < 0.0f)
-                r = XMMatrixRotationY(-ROT_SPEED);
-            else
-                r = XMMatrixRotationY(ROT_SPEED);
-
-            front = XMVector3TransformNormal(XMLoadFloat3(&g_PlayerFront), r);
-        }
-
-        velocity += front * static_cast<float>(2000.0 / 90.0 * elapsed_time);
-
+    // ボディの向き更新
+    if (g_PlayerBodyFollowCamera)
+    {
+        // カメラ XZ 方向を向く（スラスターが移動方向に独立回転）
         XMStoreFloat3(&g_PlayerFront, front);
+    }
+    else if (XMVectorGetX(XMVector3LengthSq(moveDir)) > 0.0001f)
+    {
+        // 移動方向を向く
+        XMStoreFloat3(&g_PlayerFront, moveDir);
     }
 
     velocity += -velocity * static_cast<float>(4.0f * elapsed_time);
@@ -463,99 +627,123 @@ void Player_Update(double elapsed_time)
     XMStoreFloat3(&g_PlayerPosition, position);
     XMStoreFloat3(&g_PlayerVelocity, velocity);
 
-    //--------------------------------------------------------------------------
-    // 武器切り替え（KK_Q キーまたはパッド Bボタン）
-    //--------------------------------------------------------------------------
-    if (KeyLogger_IsTrigger(KK_Q) || PadLogger_IsTrigger(PAD_LEFT_SHOULDER))
-    {
-        Player_SetBeamMode(!g_IsBeamMode, /*playSE=*/true, /*notifyHUD=*/true);
-    }
+    XMVECTOR playerFront = XMVector3Normalize(XMLoadFloat3(&g_PlayerFront));
+    XMVECTOR playerRight = XMVector3Normalize(XMVector3Cross(XMVectorSet(0, 1, 0, 0), playerFront));
 
+    float localX = XMVectorGetX(XMVector3Dot(moveDir, playerRight));
+    float localZ = XMVectorGetX(XMVector3Dot(moveDir, playerFront));
 
-    // エネルギー不足なら通常弾モードに強制切り替え
-    if (g_BeamEnergy <= 0.0f)
+    if (XMVectorGetX(XMVector3LengthSq(moveDir)) > 0.0001f)
     {
-        // 切替ルートを通す
-        Player_SetBeamMode(false, /*playSE=*/true, /*notifyHUD=*/true);
+        g_ThrusterLocalYaw = atan2f(-localX, -localZ);
     }
 
     //--------------------------------------------------------------------------
-    // 発射ボタン判定（モードによって押しっぱなし/単発を切り替え）
+    // 通常スロット切り替え（E キーまたはパッド RT）
     //--------------------------------------------------------------------------
-    const bool padAttack = g_IsBeamMode
-        ? PadLogger_IsPressed(PAD_RIGHT_SHOULDER)
-        : PadLogger_IsTrigger(PAD_RIGHT_SHOULDER);
+    {
+        static bool s_PrevRtPressed = false;
 
-    const bool mouseAttack = g_IsBeamMode
-        ? Player_Camera_IsMouseLeftPressed()
-        : Player_Camera_IsMouseLeftTrigger();
+        const bool rtPressed = (PadLogger_GetRightTrigger() > 0.5f);
+        const bool rtTrigger = (!s_PrevRtPressed && rtPressed);
+        s_PrevRtPressed = rtPressed;
 
-    const bool keyAttack = g_IsBeamMode
-        ? KeyLogger_IsPressed(KK_SPACE)
-        : KeyLogger_IsTrigger(KK_SPACE);
+        if (KeyLogger_IsTrigger(KK_E) || rtTrigger)
+        {
+            g_NormalWeaponIdx = (g_NormalWeaponIdx + 1) % NORMAL_WEAPON_COUNT;
+            if (g_PlayerModeSwitchToNormalSE >= 0)
+                PlayAudio(g_PlayerModeSwitchToNormalSE, false);
+            HUD_NotifyModeChange(false);
+        }
+    }
 
     //--------------------------------------------------------------------------
-    // ビームクールダウン更新
+    // 全武器を毎フレーム更新（クールダウンを常に正確に保持する）
     //--------------------------------------------------------------------------
-    if (g_BeamCooldown > 0.0)
-        g_BeamCooldown -= elapsed_time;
+    if (g_pBeamWeapon)
+        g_pBeamWeapon->Update(elapsed_time);
+    if (g_NormalWeapons[g_NormalWeaponIdx])
+        g_NormalWeapons[g_NormalWeaponIdx]->Update(elapsed_time);
 
-    // ビーム発射SEのクールダウン更新
-    if (g_BeamShootSECooldown > 0.0)
-        g_BeamShootSECooldown -= elapsed_time;
+    //--------------------------------------------------------------------------
+    // 発射ボタン判定
+    //--------------------------------------------------------------------------
+    const bool padAttack = PadLogger_IsPressed(PAD_RIGHT_SHOULDER);
+    const bool mouseAttack = Player_Camera_IsMouseLeftPressed();
+    const bool keyAttack = KeyLogger_IsPressed(KK_SPACE);
+
+    const bool beamAttack =
+        Player_Camera_IsMouseRightPressed() ||
+        PadLogger_IsPressed(PAD_LEFT_SHOULDER);   // LBでビーム
 
     //--------------------------------------------------------------------------
     // 発射処理
     //--------------------------------------------------------------------------
-    if (keyAttack || mouseAttack || padAttack)
+    if (keyAttack || mouseAttack || padAttack || beamAttack)
     {
-        XMFLOAT3 camFrontShoot = Player_Camera_GetFront();
+        XMFLOAT3 muzzlePos, aimDir;
 
-        XMVECTOR vCamFrontXZ = XMVector3Normalize(
-            XMVectorSet(camFrontShoot.x, 0.0f, camFrontShoot.z, 0.0f)
-        );
-
-        XMStoreFloat3(&g_PlayerFront, vCamFrontXZ);
-
-        XMVECTOR vPos = XMLoadFloat3(&g_PlayerPosition);
-
-        XMVECTOR vShootPos = vPos
-            + XMVectorSet(0.0f, 0.25f, 0.0f, 0.0f)
-            + (vCamFrontXZ * 0.05f);
-
-        XMFLOAT3 shoot_pos, b_velocity;
-        XMStoreFloat3(&shoot_pos, vShootPos);
-
-        if (g_IsBeamMode)
+        if (g_pBarrelModel)
         {
-            if (g_BeamCooldown <= 0.0 && g_BeamEnergy >= BEAM_ENERGY_COST)
-            {
-                const int baseDamage = 4; // ビームの基礎ダメージ
-                const int finalDamage = static_cast<int>(baseDamage * g_PlayerDamageMultiplier);
+            // バレルワールド行列からマズル位置と照準方向を取得
+            const AABB     barrelLocal = ModelGetAABB(g_pBarrelModel, { 0.0f, 0.0f, 0.0f });
+            const XMMATRIX barrelWorld = Player_GetBarrelWorldMatrix();
 
-                XMStoreFloat3(&b_velocity, vCamFrontXZ);
-                Bullet_CreateBeam(shoot_pos, b_velocity, finalDamage);
-                g_BeamCooldown = BEAM_FIRE_INTERVAL;
+            // ローカル -Z 端（マズル）をワールド座標に変換
+            const XMVECTOR muzzleLocal = XMVectorSet(0.0f, 0.0f, barrelLocal.min.z, 1.0f);
+            XMStoreFloat3(&muzzlePos,
+                XMVector3TransformCoord(muzzleLocal, barrelWorld));
 
-                g_BeamEnergy -= BEAM_ENERGY_COST;
-                if (g_BeamEnergy < 0.0f) g_BeamEnergy = 0.0f;
-
-                // SEクールダウンが切れていたら再生（連射時の音の重複を防ぐ）
-                if (g_BeamShootSECooldown <= 0.0)
-                {
-                    PlayAudio(g_PlayerBeamShootSE, false);
-                    g_BeamShootSECooldown = BEAM_SHOOT_SE_INTERVAL;
-                }
-            }
+            // バレルの向き（ローカル -Z → ワールド）を照準方向に
+            const XMVECTOR dir = XMVector3Normalize(
+                XMVector3TransformNormal(XMVectorSet(0.0f, 0.0f, -1.0f, 0.0f), barrelWorld));
+            XMStoreFloat3(&aimDir, dir);
         }
         else
         {
-            const int baseDamage = 100; // 通常弾の基礎ダメージ
-            const int finalDamage = static_cast<int>(baseDamage * g_PlayerDamageMultiplier);
+            // フォールバック（バレルなし）：カメラ前方 XZ またはロックオン方向
+            XMVECTOR vPos = XMLoadFloat3(&g_PlayerPosition);
+            XMVECTOR vMuzzle = vPos + XMVectorSet(0.0f, 0.25f, 0.0f, 0.0f);
+            XMStoreFloat3(&muzzlePos, vMuzzle);
 
-            XMStoreFloat3(&b_velocity, vCamFrontXZ * 20.0f); // 弾速20m/s
-            Bullet_Create(shoot_pos, b_velocity, finalDamage);
-            PlayAudio(g_PlayerShootSE, false); // 通常弾射撃SE再生
+            XMFLOAT3 camFrontShoot = Player_Camera_GetFront();
+            XMVECTOR vCamFrontXZ = XMVector3Normalize(
+                XMVectorSet(camFrontShoot.x, 0.0f, camFrontShoot.z, 0.0f));
+
+            XMFLOAT3 lockOnPos;
+            if (Game_GetLockOnWorldPos(&lockOnPos))
+            {
+                XMVECTOR toTarget = XMLoadFloat3(&lockOnPos) - vMuzzle;
+                XMStoreFloat3(&aimDir, XMVector3Normalize(toTarget));
+            }
+            else
+                XMStoreFloat3(&aimDir, vCamFrontXZ);
+        }
+
+        // 通常スロット武器発射（Space / 左クリック / R2）
+        if (keyAttack || mouseAttack || padAttack)
+        {
+            if (g_NormalWeapons[g_NormalWeaponIdx])
+                g_NormalWeapons[g_NormalWeaponIdx]->TryFire(muzzlePos, aimDir, g_PlayerDamageMultiplier);
+        }
+
+        // ビーム発射（右クリック）：胴体中心から発射
+        if (beamAttack && g_pBeamWeapon)
+        {
+            // 胴体中心位置（バレルではなくボディ原点）
+            const XMFLOAT3 beamOrigin = {
+                g_PlayerPosition.x,
+                g_PlayerPosition.y + PLAYER_HEIGHT_OFFSET,
+                g_PlayerPosition.z
+            };
+
+            // 照準方向：カメラ前方 XZ（Y 成分なし・ロックオンなし）
+            const XMFLOAT3 camFrontBeam = Player_Camera_GetFront();
+            XMFLOAT3 beamDir;
+            XMStoreFloat3(&beamDir, XMVector3Normalize(
+                XMVectorSet(camFrontBeam.x, 0.0f, camFrontBeam.z, 0.0f)));
+
+            g_pBeamWeapon->TryFire(beamOrigin, beamDir, g_PlayerDamageMultiplier);
         }
     }
 
@@ -579,10 +767,6 @@ void Player_Update(double elapsed_time)
         else if (t < 0.66f)
         {
             float s = (t - 0.33f) / 0.33f;
-            r = 1.0f;
-            g = 2.5f * (1.0f - s);
-            b = 2.5f * s;
-
             r = 2.5f;
             g = 1.0f;
             b = 2.5f * (1.0f - s);
@@ -599,19 +783,17 @@ void Player_Update(double elapsed_time)
 
 
         // スケール：倍率が上がるほど小さくなる（下限 0.0001f）
-        float scaleMin = std::max(0.0005f - t * 0.0004f, 0.0001f);
-        float scaleMax = std::max(0.15f + t * 0.10f, 0.05f);
-        g_PlayerThrusterEmitter->SetScaleRange(scaleMin, scaleMax);
+        //
+        //float scaleMin = std::max(0.0005f - t * 0.0004f, 0.0001f);
+        //float scaleMax = std::max(0.15f + t * 0.10f, 0.05f);
+        // g_PlayerThrusterEmitter->SetScaleRange(scaleMin, scaleMax);
 
         // 寿命：倍率が上がるほど長くなり、量が増えて見える
-        float lifeMin = 0.18f + t * 0.30f;
-        float lifeMax = 0.45f + t * 0.80f;
-        g_PlayerThrusterEmitter->SetLifeRange(lifeMin, lifeMax);
+        //float lifeMin = 0.18f + t * 0.30f;
+        //float lifeMax = 0.45f + t * 0.80f;
+        //g_PlayerThrusterEmitter->SetLifeRange(lifeMin, lifeMax);
     }
 
-    //--------------------------------------------------------------------------
-    // パーティクル更新（スラスター）
-    //--------------------------------------------------------------------------
     if (g_PlayerThrusterEmitter)
     {
         bool isMoveInput = false;
@@ -628,25 +810,30 @@ void Player_Update(double elapsed_time)
 
         g_PlayerThrusterEmitter->Emmit(isMoveInput);
 
-        XMVECTOR pos = XMLoadFloat3(&g_PlayerPosition);
-        XMVECTOR fwd = XMVector3Normalize(XMLoadFloat3(&g_PlayerFront));
+        if (g_pThrusterModel)
+        {
+            const AABB thrusterLocal = ModelGetAABB(g_pThrusterModel, { 0.0f, 0.0f, 0.0f });
+            const XMMATRIX thrusterWorld = Player_GetThrusterWorldMatrix();
 
-        XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-        XMVECTOR rightW = XMVector3Normalize(XMVector3Cross(up, fwd));
+            const float rearX = (thrusterLocal.min.x + thrusterLocal.max.x) * 0.5f;
+            const float rearY = (thrusterLocal.min.y + thrusterLocal.max.y) * 0.5f;
+            const float rearZ = (thrusterLocal.min.z + thrusterLocal.max.z) * 0.5f;
 
-        XMVECTOR off =
-            rightW * g_ThrusterOffsetLocal.x +
-            up * g_ThrusterOffsetLocal.y +
-            fwd * g_ThrusterOffsetLocal.z;
+            const XMVECTOR localRearPos = XMVectorSet(rearX, rearY, rearZ, 1.0f);
+            const XMVECTOR worldRearPos = XMVector3TransformCoord(localRearPos, thrusterWorld);
 
-        XMVECTOR emitPos = pos + off;
+            const XMVECTOR localRearDir = XMVectorSet(0.0f, 0.0f, -1.0f, 0.0f);
+            const XMVECTOR worldRearDir = XMVector3Normalize(
+                XMVector3TransformNormal(localRearDir, thrusterWorld)
+            );
 
-        XMFLOAT3 backDir{};
-        XMStoreFloat3(&backDir, XMVector3Normalize(-fwd));
+            XMFLOAT3 emitDir;
+            XMStoreFloat3(&emitDir, worldRearDir);
 
-        g_PlayerThrusterEmitter->SetPosition(emitPos);
-        g_PlayerThrusterEmitter->SetWorldDirection(backDir);
-        g_PlayerThrusterEmitter->SetWorldUp({ 0.0f, 1.0f, 0.0f });
+            g_PlayerThrusterEmitter->SetPosition(worldRearPos);
+            g_PlayerThrusterEmitter->SetWorldDirection(emitDir);
+            g_PlayerThrusterEmitter->SetWorldUp({ 0.0f, 1.0f, 0.0f });
+        }
 
         g_PlayerThrusterEmitter->Update(elapsed_time);
     }
@@ -667,11 +854,11 @@ void Player_Draw() // プレイヤー描画（無敵点滅の考慮、モデル�
 
     Light_SetSpecularWorld(
         Player_Camera_GetPosition(),
-        4.0f,
+        40.0f,
         { 0.6f, 0.5f, 0.4f, 1.0f } // プレイヤの光沢設定
     );
 
-    float angle = -atan2f(g_PlayerFront.z, g_PlayerFront.x) + XMConvertToRadians(0.0f);
+    float angle = -atan2f(g_PlayerFront.z, g_PlayerFront.x) + XMConvertToRadians(180.0f);
     const float pitchDeg = 0.0f;
     const float rollDeg = 0.0f;
 
@@ -681,7 +868,7 @@ void Player_Draw() // プレイヤー描画（無敵点滅の考慮、モデル�
     XMMATRIX rotY = XMMatrixRotationY(angle);
     XMMATRIX rot = rotFix * rotY * rotYawFix;
 
-    const float heightOffset = 0.25f;
+    const float heightOffset = PLAYER_HEIGHT_OFFSET;
 
     XMMATRIX t = XMMatrixTranslation(
         g_PlayerPosition.x,
@@ -691,6 +878,24 @@ void Player_Draw() // プレイヤー描画（無敵点滅の考慮、モデル�
 
     XMMATRIX world = rot * t;
     ModelDraw(g_pPlayerModel, world);
+
+    // ---- ヘッドパーツ（頭下端をボディ上面に合わせる）----
+    if (g_pHeadModel)
+    {
+        ModelDraw(g_pHeadModel, Player_GetHeadWorldMatrix());
+    }
+    // ---- スラスターパーツ（スラスター上端をボディ底面に合わせる）----
+    if (g_pThrusterModel)
+    {
+        const XMMATRIX thrusterWorld = Player_GetThrusterWorldMatrix();
+        ModelDraw(g_pThrusterModel, thrusterWorld);
+    }
+
+    // ---- 腕パーツ（上下反転してナナメに装着）----
+    if (g_pBarrelModel)
+    {
+        ModelDraw(g_pBarrelModel, Player_GetBarrelWorldMatrix());
+    }
 
     if (g_PlayerThrusterEmitter)
     {
@@ -724,33 +929,37 @@ void Player_Draw() // プレイヤー描画（無敵点滅の考慮、モデル�
 //==============================================================================
 // 当たり判定取得
 //==============================================================================
-OBB Player_GetOBB() // 現在のプレイヤー状態から OBB（向き付き当たり判定）を生成して返す
+OBB Player_GetOBB()
 {
-    XMFLOAT3 halfExtents = { PLAYER_HALF_WIDTH_X, PLAYER_HEIGHT * 0.5f, PLAYER_HALF_WIDTH_Z };
-
+    const float heightOffset = 0.25f;
+    XMVECTOR vFront = XMLoadFloat3(&g_PlayerFront);
+    XMVECTOR vRight = XMVector3Cross(XMVectorSet(0, 1, 0, 0), vFront);
+    XMVECTOR wo = vRight * g_PlayerModelCenterOffset.x + vFront * g_PlayerModelCenterOffset.z;
+    XMFLOAT3 woF; XMStoreFloat3(&woF, wo);
     XMFLOAT3 center = {
-        g_PlayerPosition.x,
-        g_PlayerPosition.y + PLAYER_HEIGHT * 0.5f,
-        g_PlayerPosition.z
+        g_PlayerPosition.x + woF.x,
+        g_PlayerPosition.y + heightOffset + g_PlayerModelCenterOffset.y,
+        g_PlayerPosition.z + woF.z
     };
-
-    return OBB::CreateFromFront(center, halfExtents, g_PlayerFront);
+    return OBB::CreateFromFront(center, g_PlayerModelHalfExtents, g_PlayerFront);
 }
 
-OBB Player_ConvertPositionToOBB(const DirectX::XMVECTOR& position) // 指定位置positionを中心としてプレイヤーOBBを生成して返す（予測衝突などに使用）。position=OBB中心算出の基準位置
+OBB Player_ConvertPositionToOBB(const DirectX::XMVECTOR& position)
 {
     XMFLOAT3 pos;
     XMStoreFloat3(&pos, position);
 
-    XMFLOAT3 halfExtents = { PLAYER_HALF_WIDTH_X, PLAYER_HEIGHT * 0.5f, PLAYER_HALF_WIDTH_Z };
-
+    const float heightOffset = 0.25f;
+    XMVECTOR vFront = XMLoadFloat3(&g_PlayerFront);
+    XMVECTOR vRight = XMVector3Cross(XMVectorSet(0, 1, 0, 0), vFront);
+    XMVECTOR wo = vRight * g_PlayerModelCenterOffset.x + vFront * g_PlayerModelCenterOffset.z;
+    XMFLOAT3 woF; XMStoreFloat3(&woF, wo);
     XMFLOAT3 center = {
-        pos.x,
-        pos.y + PLAYER_HEIGHT * 0.5f,
-        pos.z
+        pos.x + woF.x,
+        pos.y + heightOffset + g_PlayerModelCenterOffset.y,
+        pos.z + woF.z
     };
-
-    return OBB::CreateFromFront(center, halfExtents, g_PlayerFront);
+    return OBB::CreateFromFront(center, g_PlayerModelHalfExtents, g_PlayerFront);
 }
 
 AABB Player_GetAABB() // 現在のプレイヤー位置から AABB（軸揃え当たり判定）を生成して返す（床判定などに使用）
@@ -899,29 +1108,27 @@ void Player_SetDamageMultiplier(float multiplier) // 攻撃力倍率を設定す
 }
 
 //==============================================================================
-// ビームエネルギー取得
+// ビームエネルギー取得（WeaponBeam に委譲）
 //==============================================================================
-float Player_GetBeamEnergy() // 現在のビームエネルギーを返す
+float Player_GetBeamEnergy()
 {
-    return g_BeamEnergy;
+    return g_pBeamWeapon ? g_pBeamWeapon->GetEnergy() : 0.0f;
 }
 
 //==============================================================================
-// ビームエネルギー最大値取得
+// ビームエネルギー最大値取得（WeaponBeam に委譲）
 //==============================================================================
-float Player_GetBeamEnergyMax() // ビームエネルギーの最大値を返す
+float Player_GetBeamEnergyMax()
 {
-    return BEAM_ENERGY_MAX;
+    return g_pBeamWeapon ? g_pBeamWeapon->GetEnergyMax() : 0.0f;
 }
 
 //==============================================================================
-// ビームエネルギー回復
+// ビームエネルギー回復（WeaponBeam に委譲）
 //==============================================================================
-void Player_AddBeamEnergy(float amount) // ビームエネルギーを回復する（最大値でクランプ）。amount=回復量
+void Player_AddBeamEnergy(float amount)
 {
-    g_BeamEnergy += amount;
-    if (g_BeamEnergy > BEAM_ENERGY_MAX)
-        g_BeamEnergy = BEAM_ENERGY_MAX;
+    if (g_pBeamWeapon) g_pBeamWeapon->AddEnergy(amount);
 }
 
 float Player_GetSpeedMultiplier() // スピード倍率を返す
@@ -932,4 +1139,15 @@ float Player_GetSpeedMultiplier() // スピード倍率を返す
 void Player_SetSpeedMultiplier(float m) // スピード倍率を設定する。m=設定する倍率
 {
     g_PlayerSpeedMultiplier = m;
+}
+
+//------------------------------------------------------------------------------
+// Player_SetNormalWeaponIndex
+//   武器選択画面（WeaponSelect）から呼ばれ、ゲーム開始時の通常スロット武器を設定する
+//   ※ Player_Initialize() の後に呼ぶこと
+//------------------------------------------------------------------------------
+void Player_SetNormalWeaponIndex(int idx)
+{
+    if (idx >= 0 && idx < NORMAL_WEAPON_COUNT)
+        g_NormalWeaponIdx = idx;
 }

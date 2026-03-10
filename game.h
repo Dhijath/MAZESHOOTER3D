@@ -1,6 +1,8 @@
 ﻿#ifndef GAME_H
 #define GAME_H
 
+#include <DirectXMath.h>
+
 void Game_Initialize();
 
 void Game_Finalize();
@@ -9,10 +11,23 @@ void Game_Update(double elapsed_time);
 
 void Game_Draw();
 
+// ダンジョン再生成時に呼ぶ（EnemyManager を使って敵を再スポーン）
+void Game_RespawnEnemies();
+
 void MiniMap_Render3D();
 
 void MiniMap_Draw2D();
 
+// ロックオン：画面中央に最も近いエネミーのワールド位置を返す（見つからない場合 false）
+bool Game_GetLockOnWorldPos(DirectX::XMFLOAT3* outPos);
+
+// ボスが生存中か（ゴール無効化判定に使用）
+// ・true  : ボスが生存中 → ゴール到達を無効にする
+// ・false : ボスが撃破済み → ゴール到達を有効にする
+bool Game_IsBossAlive();
+
+// ボス部屋モードを設定（true のときのみ Game_RespawnEnemies でボスをスポーンする）
+void Game_SetBossRoomMode(bool isBossRoom);
 
 #endif // !GAME_H
 

@@ -23,6 +23,7 @@ class ThrusterParticle : public Particle
 private:
     int   m_texture_id = -1;
     float m_scale = 1.0f;
+    float m_aspect = 1.0f;  // 横長比率（幅 / 高さ）
 
 public:
     ThrusterParticle(
@@ -31,7 +32,8 @@ public:
         double Life_Time,
         double Spawn_Time,
         int texture_id,
-        float scale);
+        float scale,
+        float aspect = 1.0f);
 
     virtual ~ThrusterParticle() = default;
 
@@ -56,6 +58,7 @@ private:
 
     float m_scale_min = 0.20f;
     float m_scale_max = 0.40f;
+    float m_aspect = 1.0f;   // 横長比率（幅 / 高さ）
 
     float m_speed_min = 2.0f;
     float m_speed_max = 6.0f;
@@ -104,6 +107,7 @@ public:
 
     void SetColor(const DirectX::XMFLOAT4& color) { m_color = color; }
     void SetUVRect(const DirectX::XMFLOAT4& uvRect) { m_uvRect = uvRect; }
+    void SetAspectRatio(float aspect) { m_aspect = aspect; }
 };
 
 #endif // PARTICLE_THRUSTER_H

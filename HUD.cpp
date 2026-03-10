@@ -361,31 +361,31 @@ void HUD_Initialize()
 //==============================================================================
 void HUD_Finalize()
 {
-    s_BarTexID   = -1;
+    s_BarTexID = -1;
     s_FrameTexID = -1;
-    s_TexAtk     = -1;
-    s_TexSpeed   = -1;
+    s_TexAtk = -1;
+    s_TexSpeed = -1;
 
-    s_AtkCount   = 0;
+    s_AtkCount = 0;
     s_SpeedCount = 0;
 
-    s_TexBeam   = -1;
+    s_TexBeam = -1;
     s_TexNormal = -1;
     s_ModeTimer = 0.0;
 
-    s_TexSightBeam   = -1;
+    s_TexSightBeam = -1;
     s_TexSightNormal = -1;
 
     s_TexStackATTACKFrame = -1;
-    s_TexStackATTACKStat  = -1;
-    s_TexStackATTACKItem  = -1;
+    s_TexStackATTACKStat = -1;
+    s_TexStackATTACKItem = -1;
 
-    s_TexStackSPEEDFrame  = -1;
-    s_TexStackSPEEDStat   = -1;
-    s_TexStackSPEEDItem   = -1;
+    s_TexStackSPEEDFrame = -1;
+    s_TexStackSPEEDStat = -1;
+    s_TexStackSPEEDItem = -1;
 
-    s_TexStackX  = -1;
-    s_TexDigits  = -1;
+    s_TexStackX = -1;
+    s_TexDigits = -1;
 }
 
 //==============================================================================
@@ -418,12 +418,12 @@ void HUD_Draw()
 
     Sprite_Begin();
 
-    const float frameTexW  = (float)Texture_Width(s_FrameTexID);
-    const float frameTexH  = (float)Texture_Height(s_FrameTexID);
+    const float frameTexW = (float)Texture_Width(s_FrameTexID);
+    const float frameTexH = (float)Texture_Height(s_FrameTexID);
     const float frameRatio = (frameTexH > 0.0f) ? frameTexW / frameTexH : 1.0f;
     const float frameDrawH = FRAME_W / frameRatio;
     const float ENERGY_FRAME_Y = HP_FRAME_Y + frameDrawH + 20.0f;
-    const float ENERGY_BAR_Y   = ENERGY_FRAME_Y + 21 + FRAME_MARGIN_TOP;
+    const float ENERGY_BAR_Y = ENERGY_FRAME_Y + 21 + FRAME_MARGIN_TOP;
 
     // HP フレーム＋バー
     {
@@ -431,8 +431,8 @@ void HUD_Draw()
             { 0.0f, 0.0f, 0.0f, 0.0f });
 
         const int   currentHP = Player_GetHP();
-        const int   maxHP     = Player_GetMaxHP();
-        const float hpRatio   = (maxHP > 0) ? (float)currentHP / maxHP : 0.0f;
+        const int   maxHP = Player_GetMaxHP();
+        const float hpRatio = (maxHP > 0) ? (float)currentHP / maxHP : 0.0f;
         const float currentBarWidth = BAR_WIDTH * hpRatio;
 
         XMFLOAT4 hpColor = { 0.0f, 1.0f, 0.0f, 1.0f };
@@ -458,8 +458,8 @@ void HUD_Draw()
             { 0.0f, 0.0f, 0.0f, 0.0f });
 
         const float currentEnergy = Player_GetBeamEnergy();
-        const float maxEnergy     = Player_GetBeamEnergyMax();
-        const float energyRatio   = (maxEnergy > 0.0f) ? currentEnergy / maxEnergy : 0.0f;
+        const float maxEnergy = Player_GetBeamEnergyMax();
+        const float energyRatio = (maxEnergy > 0.0f) ? currentEnergy / maxEnergy : 0.0f;
         const float currentBarWidth = BAR_WIDTH * energyRatio;
 
         XMFLOAT4 energyColor = { 0.0f, 0.8f, 1.0f, 1.0f };
@@ -489,7 +489,7 @@ void HUD_Draw()
 
         const float screenW = vp.Width;
         const float screenH = vp.Height;
-        const float scale   = HUD_ComputeUIScale(screenW, screenH);
+        const float scale = HUD_ComputeUIScale(screenW, screenH);
 
         HUD_DrawAttackStackUI(scale, screenW, screenH);
         HUD_DrawSpeedStackUI(scale, screenW, screenH);
@@ -553,8 +553,8 @@ static void HUD_DrawAttackStackUI(float scale, float screenW, float screenH)
     if (s_TexStackATTACKFrame < 0 || s_TexStackATTACKStat < 0 || s_TexStackATTACKItem < 0) return;
 
     const float statSize = STACK_STAT_SIZE * scale;
-    const float frameW   = STACK_FRAME_W   * scale;
-    const float frameH   = STACK_FRAME_H   * scale;
+    const float frameW = STACK_FRAME_W * scale;
+    const float frameH = STACK_FRAME_H * scale;
 
     const float baseX = STACK_MARGIN_L * scale;
     const float baseY = screenH - (STACK_MARGIN_B * scale) - frameH;
@@ -565,11 +565,11 @@ static void HUD_DrawAttackStackUI(float scale, float screenW, float screenH)
     const float frameX = statX + statSize + (STACK_GAP_X * scale);
     const float frameY = baseY;
 
-    Sprite_Draw(s_TexStackATTACKStat,  statX,  statY,  statSize, statSize, XMFLOAT4(1, 1, 1, 1));
-    Sprite_Draw(s_TexStackATTACKFrame, frameX, frameY, frameW,   frameH,   XMFLOAT4(1, 1, 1, 1));
+    Sprite_Draw(s_TexStackATTACKStat, statX, statY, statSize, statSize, XMFLOAT4(1, 1, 1, 1));
+    Sprite_Draw(s_TexStackATTACKFrame, frameX, frameY, frameW, frameH, XMFLOAT4(1, 1, 1, 1));
 
-    const float itemX    = frameX + (STACK_INNER_PAD_X * scale);
-    const float itemY    = frameY + (STACK_INNER_PAD_Y * scale);
+    const float itemX = frameX + (STACK_INNER_PAD_X * scale);
+    const float itemY = frameY + (STACK_INNER_PAD_Y * scale);
     const float itemSize = STACK_ITEM_SIZE * scale;
 
     Sprite_Draw(s_TexStackATTACKItem, itemX, itemY, itemSize, itemSize, XMFLOAT4(1.5f, 1.5f, 1.5f, 1.5f));
@@ -586,9 +586,9 @@ static void HUD_DrawAttackStackUI(float scale, float screenW, float screenH)
         if (s_TexDigits >= 0)
         {
             const float digitScale = STACK_DIGIT_SCALE * scale;
-            const float digitH     = HUD_GetDigitH(s_TexDigits) * digitScale;
-            const float numX       = xX + xW + (STACK_X_GAP_X * scale);
-            const float numY       = itemY + (itemSize - digitH) * 0.5f;
+            const float digitH = HUD_GetDigitH(s_TexDigits) * digitScale;
+            const float numX = xX + xW + (STACK_X_GAP_X * scale);
+            const float numY = itemY + (itemSize - digitH) * 0.5f;
 
             HUD_DrawNumberLeftScaled(s_TexDigits, s_AtkCount, numX, numY, digitScale);
         }
@@ -598,9 +598,9 @@ static void HUD_DrawAttackStackUI(float scale, float screenW, float screenH)
         if (s_TexDigits >= 0)
         {
             const float digitScale = STACK_DIGIT_SCALE * scale;
-            const float digitH     = HUD_GetDigitH(s_TexDigits) * digitScale;
-            const float numX       = itemX + itemSize + (STACK_ITEM_GAP_X * scale);
-            const float numY       = itemY + (itemSize - digitH) * 0.5f;
+            const float digitH = HUD_GetDigitH(s_TexDigits) * digitScale;
+            const float numX = itemX + itemSize + (STACK_ITEM_GAP_X * scale);
+            const float numY = itemY + (itemSize - digitH) * 0.5f;
 
             HUD_DrawNumberLeftScaled(s_TexDigits, s_AtkCount, numX, numY, digitScale);
         }
@@ -615,8 +615,8 @@ static void HUD_DrawSpeedStackUI(float scale, float screenW, float screenH)
     if (s_TexStackSPEEDFrame < 0 || s_TexStackSPEEDStat < 0 || s_TexStackSPEEDItem < 0) return;
 
     const float statSize = STACK_STAT_SIZE * scale;
-    const float frameW   = STACK_FRAME_W   * scale;
-    const float frameH   = STACK_FRAME_H   * scale;
+    const float frameW = STACK_FRAME_W * scale;
+    const float frameH = STACK_FRAME_H * scale;
 
     const float baseX = STACK_MARGIN_L * scale;
     const float baseY = screenH - (STACK_MARGIN_B * scale) - frameH - (frameH + STACK_ROW_GAP_Y * scale);
@@ -627,15 +627,15 @@ static void HUD_DrawSpeedStackUI(float scale, float screenW, float screenH)
     const float frameX = statX + statSize + (STACK_GAP_X * scale);
     const float frameY = baseY;
 
-    Sprite_Draw(s_TexStackSPEEDStat,  statX,  statY,  statSize, statSize, XMFLOAT4(1, 1, 1, 1));
-    Sprite_Draw(s_TexStackSPEEDFrame, frameX, frameY, frameW,   frameH,   XMFLOAT4(1, 1, 1, 1));
+    Sprite_Draw(s_TexStackSPEEDStat, statX, statY, statSize, statSize, XMFLOAT4(1, 1, 1, 1));
+    Sprite_Draw(s_TexStackSPEEDFrame, frameX, frameY, frameW, frameH, XMFLOAT4(1, 1, 1, 1));
 
-    const float itemX    = frameX + (STACK_INNER_PAD_X * scale);
-    const float itemY    = frameY + (STACK_INNER_PAD_Y * scale);
+    const float itemX = frameX + (STACK_INNER_PAD_X * scale);
+    const float itemY = frameY + (STACK_INNER_PAD_Y * scale);
     const float itemSize = STACK_ITEM_SIZE * scale;
 
     Sprite_Draw(s_TexStackSPEEDItem, itemX, itemY, itemSize, itemSize, XMFLOAT4(1.5f, 1.5f, 1.5f, 1.5f));
-   
+
     if (s_TexStackX >= 0)
     {
         const float xW = STACK_X_SIZE_W * scale;
@@ -648,9 +648,9 @@ static void HUD_DrawSpeedStackUI(float scale, float screenW, float screenH)
         if (s_TexDigits >= 0)
         {
             const float digitScale = STACK_DIGIT_SCALE * scale;
-            const float digitH     = HUD_GetDigitH(s_TexDigits) * digitScale;
-            const float numX       = xX + xW + (STACK_X_GAP_X * scale);
-            const float numY       = itemY + (itemSize - digitH) * 0.5f;
+            const float digitH = HUD_GetDigitH(s_TexDigits) * digitScale;
+            const float numX = xX + xW + (STACK_X_GAP_X * scale);
+            const float numY = itemY + (itemSize - digitH) * 0.5f;
 
             HUD_DrawNumberLeftScaled(s_TexDigits, s_SpeedCount, numX, numY, digitScale);
         }
@@ -660,9 +660,9 @@ static void HUD_DrawSpeedStackUI(float scale, float screenW, float screenH)
         if (s_TexDigits >= 0)
         {
             const float digitScale = STACK_DIGIT_SCALE * scale;
-            const float digitH     = HUD_GetDigitH(s_TexDigits) * digitScale;
-            const float numX       = itemX + itemSize + (STACK_ITEM_GAP_X * scale);
-            const float numY       = itemY + (itemSize - digitH) * 0.5f;
+            const float digitH = HUD_GetDigitH(s_TexDigits) * digitScale;
+            const float numX = itemX + itemSize + (STACK_ITEM_GAP_X * scale);
+            const float numY = itemY + (itemSize - digitH) * 0.5f;
 
             HUD_DrawNumberLeftScaled(s_TexDigits, s_SpeedCount, numX, numY, digitScale);
         }
@@ -681,7 +681,12 @@ static void HUD_DrawSpeedStackUI(float scale, float screenW, float screenH)
 void HUD_NotifyModeChange(bool isBeam)
 {
     s_IsBeamMode = isBeam;
-    s_ModeTimer  = MODE_DISPLAY_DURATION;
+    s_ModeTimer = MODE_DISPLAY_DURATION;
+}
+
+int HUD_GetSightTexture()
+{
+    return s_IsBeamMode ? s_TexSightBeam : s_TexSightNormal;
 }
 
 //==============================================================================

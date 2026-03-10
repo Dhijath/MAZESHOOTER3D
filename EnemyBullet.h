@@ -69,7 +69,8 @@ void EnemyBullet_Draw();
 //==============================================================================
 void EnemyBullet_Create(const DirectX::XMFLOAT3& position,
     const DirectX::XMFLOAT3& velocity,
-    int damage);
+    int damage,
+    float speed = 8.0f);
 
 //==============================================================================
 // 弾数取得

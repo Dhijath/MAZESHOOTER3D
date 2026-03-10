@@ -79,21 +79,17 @@ ThrusterParticle::ThrusterParticle(
     double Life_Time,
     double Spawn_Time,
     int texture_id,
-    float scale)
+    float scale,
+    float aspect)
     : Particle(position, velocity, Life_Time, Spawn_Time)
     , m_texture_id(texture_id)
     , m_scale(scale)
+    , m_aspect(aspect)
 {
 }
 
 void ThrusterParticle::Update(double elapsed_time)
 {
-    // 寿命比でフェードアウト（スケール側）
-    float r = static_cast<float>(GetLifeRatio());
-    if (r > 1.0f) r = 1.0f;
-    m_scale = std::max(0.0f, m_scale * (1.0f - r));
-
-    // パーティクル自体は基底の移動だけ（重力はスラスター用途なので入れない）
     Particle::Update(elapsed_time);
 }
 
@@ -102,9 +98,10 @@ void ThrusterParticle::Draw(const XMFLOAT4& color, const XMFLOAT4& uvRect) const
     XMFLOAT3 pos{};
     XMStoreFloat3(&pos, GetPosition());
 
-    // alpha を寿命で落とす（色は emitter 側から渡す）
+    // 寿命比でスケールとアルファを落とす
     float r = static_cast<float>(GetLifeRatio());
     if (r > 1.0f) r = 1.0f;
+    const float displayScale = m_scale * (1.0f - r);
 
     XMFLOAT4 c = color;
     c.w = c.w * (1.0f - r);
@@ -112,7 +109,7 @@ void ThrusterParticle::Draw(const XMFLOAT4& color, const XMFLOAT4& uvRect) const
     Billboard_Draw(
         m_texture_id,
         pos,
-        { m_scale, m_scale },
+        { displayScale * m_aspect, displayScale },
         c,
         uvRect);
 }
@@ -160,7 +157,8 @@ Particle* ThrusterEmitter::createParticle()
         static_cast<double>(life),
         0.0,
         m_particle_texture_id,
-        scale);
+        scale,
+        m_aspect);
 }
 
 void ThrusterEmitter::Update(double elapsed_time)

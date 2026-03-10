@@ -1,4 +1,4 @@
-﻿/*==============================================================================
+﻿﻿/*==============================================================================
 
    弾制御 [bullet.h]
                                                          Author : 51106
@@ -28,8 +28,9 @@
 //==============================================================================
 enum class BulletType
 {
-    Normal, // 通常弾
-    Beam,   // ビーム弾
+    Normal,  // 通常弾
+    Beam,    // ビーム弾
+    Missile, // ミサイル（命中時爆発）
 };
 
 //==============================================================================
@@ -168,7 +169,7 @@ private:
     double             m_accumulatedTime{ 0.0 };  // 経過時間（寿命管理用）
     int                m_damage{ 0 };         // ダメージ量
 
-    static constexpr double LIFE_TIME = 3.0;  // 寿命（秒）
+    static constexpr double LIFE_TIME = 0.5;  // 寿命（秒）
 };
 
 //==============================================================================
@@ -229,8 +230,8 @@ private:
     bool               m_destroyed{ false };  // 壁衝突消滅フラグ
     int                m_damage{ 0 };         // ダメージ量
 
-    static constexpr double LIFE_TIME = 1.0;    // 寿命（秒）
-    static constexpr float  BEAM_SPEED = 10.0f;  // 移動速度（m/s）
+    static constexpr double LIFE_TIME = 0.5;    // 寿命（秒）
+    static constexpr float  BEAM_SPEED = 20.0f;  // 移動速度（m/s）
 
     class ThrusterEmitter* m_emitter{ nullptr };  // パーティクルエミッター
 
@@ -240,6 +241,75 @@ private:
     // ■役割
     // ・現在位置がマップの壁AABBと重なっていたら消滅フラグを立てる
     // ・エフェクトを前フレーム位置で生成する
+    //==========================================================================
+    void CheckWallCollision();
+};
+
+//==============================================================================
+// 爆発イベント（ミサイル命中時にキューに積まれる）
+//
+// ■役割
+// ・BulletManager が蓄積し、Enemy_Update() が毎フレーム消費する
+//==============================================================================
+struct ExplosionEvent
+{
+    DirectX::XMFLOAT3 center;  // 爆発中心座標
+    float              radius;  // 爆発半径
+    int                damage;  // 爆発ダメージ
+};
+
+//==============================================================================
+// ミサイル弾クラス
+//
+// ■役割
+// ・直線飛行し壁または寿命切れで消滅
+// ・消滅時に BulletManager へ爆発イベントを登録する（AddExplosion 経由）
+//==============================================================================
+class MissileBullet : public BulletBase
+{
+public:
+    //==========================================================================
+    // コンストラクタ
+    //
+    // ■引数
+    // ・pos             : 初期位置
+    // ・vel             : 初期速度
+    // ・damage          : ダメージ量
+    // ・explosionRadius : 爆発半径
+    //==========================================================================
+    MissileBullet(const DirectX::XMFLOAT3& pos, const DirectX::XMFLOAT3& vel,
+        int damage, float explosionRadius);
+
+    void                      Update(double elapsed_time) override;
+    bool                      IsDestroyed()    const override;
+    BulletType                GetType()        const override { return BulletType::Missile; }
+    const DirectX::XMFLOAT3& GetPosition()     const override;
+    const DirectX::XMFLOAT3& GetPrevPosition() const override;
+    DirectX::XMFLOAT3        GetFront()        const override;
+    int                       GetDamage()      const override { return m_damage; }
+
+    //==========================================================================
+    // 爆発半径取得（BulletManager が爆発登録時に参照）
+    //==========================================================================
+    float GetExplosionRadius() const { return m_explosionRadius; }
+
+private:
+    DirectX::XMFLOAT3 m_position{};
+    DirectX::XMFLOAT3 m_prevPosition{};
+    DirectX::XMFLOAT3 m_velocity{};
+    double             m_accumulatedTime{ 0.0 };
+    bool               m_destroyed{ false };
+    int                m_damage{ 0 };
+    float              m_explosionRadius{ 0.0f };
+
+    static constexpr double LIFE_TIME = 3.0;   // 寿命（秒）
+    static constexpr float  MISSILE_SIZE = 0.15f; // 壁衝突判定の半幅
+
+    //==========================================================================
+    // 壁衝突チェック
+    //
+    // ■役割
+    // ・現在位置がマップの壁AABBと重なっていたら消滅フラグを立てる
     //==========================================================================
     void CheckWallCollision();
 };
@@ -314,6 +384,35 @@ public:
     void CreateBeam(const DirectX::XMFLOAT3& position, const DirectX::XMFLOAT3& velocity, int damage);
 
     //==========================================================================
+    // ミサイル弾生成
+    //
+    // ■引数
+    // ・position : 初期位置
+    // ・velocity : 初期速度
+    // ・damage   : 爆発ダメージ量
+    // ・radius   : 爆発半径
+    //==========================================================================
+    void CreateMissile(const DirectX::XMFLOAT3& position, const DirectX::XMFLOAT3& velocity, int damage, float radius);
+
+    //==========================================================================
+    // 未処理の爆発イベント数を返す
+    //==========================================================================
+    int GetPendingExplosionCount() const;
+
+    //==========================================================================
+    // 未処理の爆発イベントを取得
+    //
+    // ■引数
+    // ・i : インデックス（0 〜 GetPendingExplosionCount()-1）
+    //==========================================================================
+    ExplosionEvent GetPendingExplosion(int i) const;
+
+    //==========================================================================
+    // 未処理の爆発イベントをすべてクリア
+    //==========================================================================
+    void ClearPendingExplosions();
+
+    //==========================================================================
     // 弾削除
     //
     // ■引数
@@ -383,7 +482,7 @@ private:
     // 通常弾のOBBサイズ
     static constexpr float BULLET_HALF_WIDTH_X = 0.15f;
     static constexpr float BULLET_HALF_WIDTH_Y = 0.15f;
-    static constexpr float BULLET_HALF_LENGTH_Z = 1.0f;
+    static constexpr float BULLET_HALF_LENGTH_Z = 0.20f;
 
     // ビーム弾のOBBサイズ
     static constexpr float BEAM_HALF_WIDTH_X = 0.04f;
@@ -394,6 +493,16 @@ private:
     int           m_count{ 0 };                       // 現在の弾数
     struct MODEL* m_pModel{ nullptr };                // 通常弾のモデル
     int           m_beamTexID{ -1 };                  // ビームのパーティクル用テクスチャID
+
+    // ミサイル爆発キュー（毎フレーム Enemy_Update 側で消費・クリア）
+    static constexpr int MAX_EXPLOSIONS = 32;
+    ExplosionEvent       m_pendingExplosions[MAX_EXPLOSIONS]{};
+    int                  m_explosionCount{ 0 };
+
+    //==========================================================================
+    // 爆発イベントをキューに追加（BulletManager 内部から呼ぶ）
+    //==========================================================================
+    void AddExplosion(const DirectX::XMFLOAT3& pos, float radius, int damage);
 
     //==========================================================================
     // 通常弾の描画（モデル）
@@ -529,5 +638,34 @@ OBB Bullet_GetOBB(int index);
 // ・false : 通常弾
 //==============================================================================
 bool Bullet_IsBeam(int index);
+
+//==============================================================================
+// ミサイル弾生成
+//
+// ■引数
+// ・position : 初期位置
+// ・velocity : 初期速度
+// ・damage   : 爆発ダメージ量
+// ・radius   : 爆発半径
+//==============================================================================
+void Bullet_CreateMissile(const DirectX::XMFLOAT3& position, const DirectX::XMFLOAT3& velocity, int damage, float radius);
+
+//==============================================================================
+// 未処理の爆発イベント数を返す
+//==============================================================================
+int Bullet_GetPendingExplosionCount();
+
+//==============================================================================
+// 未処理の爆発イベントを取得
+//
+// ■引数
+// ・i : インデックス
+//==============================================================================
+ExplosionEvent Bullet_GetPendingExplosion(int i);
+
+//==============================================================================
+// 未処理の爆発イベントをすべてクリア（Enemy_Update() の末尾で呼ぶ）
+//==============================================================================
+void Bullet_ClearPendingExplosions();
 
 #endif // BULLET_H

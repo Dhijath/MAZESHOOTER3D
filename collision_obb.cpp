@@ -1,6 +1,6 @@
 ﻿/*==============================================================================
 
-   OBB�����蔻�� [collision_obb.cpp]
+   OBB当たり判定 [collision_obb.cpp]
                                                          Author : 51106
                                                          Date   : 2026/01/17
 --------------------------------------------------------------------------------
@@ -17,7 +17,7 @@
 
 using namespace DirectX;
 
-// �f�o�b�O�`��p�icollision.cpp �Œ�`����Ă����̂�Q�Ɓj
+// デバッグ描画用（collision.cpp で定義されているものを参照）
 extern ID3D11Buffer* g_pVertexBuffer;
 extern ID3D11Device* g_pDevice;
 extern ID3D11DeviceContext* g_pContext;
@@ -34,7 +34,7 @@ namespace
 }
 
 //==============================================================================
-// �ʒu�E�T�C�Y�E�����ifront�j���琶��
+// 位置・サイズ・向き（front）から生成
 //==============================================================================
 OBB OBB::CreateFromFront(
     const DirectX::XMFLOAT3& position,
@@ -45,15 +45,15 @@ OBB OBB::CreateFromFront(
     obb.center = position;
     obb.halfExtents = halfExtents;
 
-    // Y���͏�ɏ����
+    // Y軸は常に上向き
     obb.axisY = { 0.0f, 1.0f, 0.0f };
 
-    // front �𐳋K������ Z���ɂ���
+    // front を正規化して Z軸にする
     XMVECTOR vFront = XMLoadFloat3(&front);
     vFront = XMVector3Normalize(vFront);
     XMStoreFloat3(&obb.axisZ, vFront);
 
-    // X�� = Y �~ Z�i�E��n�j
+    // X軸 = Y × Z（右手系）
     XMVECTOR vY = XMLoadFloat3(&obb.axisY);
     XMVECTOR vZ = XMLoadFloat3(&obb.axisZ);
     XMVECTOR vX = XMVector3Cross(vY, vZ);
@@ -64,23 +64,23 @@ OBB OBB::CreateFromFront(
 }
 
 //==============================================================================
-// AABB���琶���i��]�Ȃ��j
+// AABBから生成（回転なし）
 //==============================================================================
 OBB OBB::CreateFromAABB(const AABB& aabb)
 {
     OBB obb;
 
-    // ���S���W
+    // 中心座標
     obb.center.x = (aabb.min.x + aabb.max.x) * 0.5f;
     obb.center.y = (aabb.min.y + aabb.max.y) * 0.5f;
     obb.center.z = (aabb.min.z + aabb.max.z) * 0.5f;
 
-    // ���T�C�Y
+    // 半サイズ
     obb.halfExtents.x = (aabb.max.x - aabb.min.x) * 0.5f;
     obb.halfExtents.y = (aabb.max.y - aabb.min.y) * 0.5f;
     obb.halfExtents.z = (aabb.max.z - aabb.min.z) * 0.5f;
 
-    // ���͕W����XYZ
+    // 軸は標準XYZ
     obb.axisX = { 1.0f, 0.0f, 0.0f };
     obb.axisY = { 0.0f, 1.0f, 0.0f };
     obb.axisZ = { 0.0f, 0.0f, 1.0f };
@@ -89,17 +89,17 @@ OBB OBB::CreateFromAABB(const AABB& aabb)
 }
 
 //==============================================================================
-// ����w���p�[�F���鎲�ւ̓��e����v�Z
+// 任意の軸への投影（分離軸定理）
 //
-// �����
-// �EOBB��C�ӂ̎��ɓ��e�����Ƃ��́u���a�v��Ԃ�
+// ■概要
+// ・OBBの任意の軸に投影したときの「半径」を返す
 //
-// ������
-// �Eobb  : ���e�Ώۂ�OBB
-// �Eaxis : ���e���i���K���ς݁j
+// ■引数
+// ・obb  : 投影対象のOBB
+// ・axis : 投影軸（正規化済み）
 //
-// ���߂�l
-// �E���e���a�i��ɐ��̒l�j
+// ■戻り値
+// ・投影半径（常に正の値）
 //==============================================================================
 static float ProjectOBBOntoAxis(const OBB& obb, const XMVECTOR& axis)
 {
@@ -115,16 +115,16 @@ static float ProjectOBBOntoAxis(const OBB& obb, const XMVECTOR& axis)
 }
 
 //==============================================================================
-// OBB���m�̏d�Ȃ蔻��i�������藝�j
+// OBB同士の重なり判定（分離軸定理）
 //==============================================================================
 bool Collision_IsOverlapOBB(const OBB& a, const OBB& b)
 {
-    // ���S�ԃx�N�g��
+    // 中心間ベクトル
     XMVECTOR vCenterA = XMLoadFloat3(&a.center);
     XMVECTOR vCenterB = XMLoadFloat3(&b.center);
     XMVECTOR vDist = vCenterB - vCenterA;
 
-    // Y����]�݂̂Ȃ̂ŁA���莲��4�{�i�eOBB��X/Z���j
+    // Y軸回転のみなので、検査軸4本（各OBBのX/Z軸）
     XMVECTOR axes[5] =
     {
         XMLoadFloat3(&a.axisX),
@@ -138,34 +138,34 @@ bool Collision_IsOverlapOBB(const OBB& a, const OBB& b)
     {
         XMVECTOR axis = XMVector3Normalize(axes[i]);
 
-        // ���S�ԋ����̓��e
+        // 中心間距離の投影
         float distProj = fabsf(XMVectorGetX(XMVector3Dot(vDist, axis)));
 
-        // �eOBB�̓��e���a
+        // 各OBBの投影半径
         float radiusA = ProjectOBBOntoAxis(a, axis);
         float radiusB = ProjectOBBOntoAxis(b, axis);
 
-        // �������������������Փ�
+        // この軸で分離 → 非衝突
         if (distProj > radiusA + radiusB)
             return false;
     }
 
-    // ���ׂĂ̎��ŏd�Ȃ��Ă��� �� �Փ�
+    // すべての軸で重なっている → 衝突
     return true;
 }
 
 //==============================================================================
-// OBB��AABB�̏d�Ȃ蔻��
+// OBBとAABBの重なり判定
 //==============================================================================
 bool Collision_IsOverlapOBB_AABB(const OBB& obb, const AABB& aabb)
 {
-    // AABB��OBB�ɕϊ����Ĕ���
+    // AABBをOBBに変換して判定
     OBB obbFromAABB = OBB::CreateFromAABB(aabb);
     return Collision_IsOverlapOBB(obb, obbFromAABB);
 }
 
 //==============================================================================
-// OBB���m�̏Փ˔���i�����o�������t���j
+// OBB同士の衝突判定（押し戻しベクトル付き）
 //==============================================================================
 Hit Collision_IsHitOBB(const OBB& a, const OBB& b)
 {
@@ -198,45 +198,45 @@ Hit Collision_IsHitOBB(const OBB& a, const OBB& b)
 
         float penetration = (radiusA + radiusB) - fabsf(distProj);
 
-        // �������������������Փ�
+        // この軸で分離 → 非衝突
         if (penetration < 0.0f)
             return hit;
 
-        // �ŏ��߂荞�ݎ���L�^
+        // 最小めり込み軸を記録
         if (penetration < minPenetration)
         {
             minPenetration = penetration;
             bestAxis = axis;
 
-            // b����a������o�������ɏC��
+            // bからaへの押し出し方向に修正
             if (distProj < 0.0f)
                 bestAxis = -bestAxis;
         }
     }
 
-    // �Փ˂���
     hit.isHit = true;
+    hit.penetration = minPenetration;
     XMStoreFloat3(&hit.normal, XMVector3Normalize(bestAxis));
 
     return hit;
 }
 
 //==============================================================================
-// OBB��AABB�̏Փ˔���i�����o�������t���j
+// OBBとAABBの衝突判定（押し戻しベクトル付き）
 //==============================================================================
 Hit Collision_IsHitOBB_AABB(const OBB& obb, const AABB& aabb)
 {
-    // AABB��OBB�ɕϊ����Ĕ���
+    // AABBをOBBに変換して判定
     OBB obbFromAABB = OBB::CreateFromAABB(aabb);
     return Collision_IsHitOBB(obb, obbFromAABB);
 }
 
 //==============================================================================
-// �f�o�b�O�`��FOBB�i���ň͂��j
+// デバッグ描画：OBB（ワイヤーフレーム）
 //==============================================================================
 void Collision_DebugDraw(const OBB& obb, const DirectX::XMFLOAT4& color)
 {
-    // ���������`�F�b�N
+    // nullチェック
     if (!g_pContext || !g_pVertexBuffer) return;
 
     XMVECTOR vCenter = XMLoadFloat3(&obb.center);
@@ -244,7 +244,7 @@ void Collision_DebugDraw(const OBB& obb, const DirectX::XMFLOAT4& color)
     XMVECTOR vY = XMLoadFloat3(&obb.axisY) * obb.halfExtents.y;
     XMVECTOR vZ = XMLoadFloat3(&obb.axisZ) * obb.halfExtents.z;
 
-    // 8���_��v�Z
+    // 8頂点を計算
     XMFLOAT3 corners[8];
     XMStoreFloat3(&corners[0], vCenter - vX - vY - vZ); // 0: Bottom-Back-Left
     XMStoreFloat3(&corners[1], vCenter + vX - vY - vZ); // 1: Bottom-Back-Right
@@ -255,7 +255,7 @@ void Collision_DebugDraw(const OBB& obb, const DirectX::XMFLOAT4& color)
     XMStoreFloat3(&corners[6], vCenter + vX + vY + vZ); // 6: Top-Front-Right
     XMStoreFloat3(&corners[7], vCenter - vX + vY + vZ); // 7: Top-Front-Left
 
-    // 12�{�̐��i24���_�j
+    // 12本の線（24頂点）
     Vertex v[24];
 
     auto set_line = [&](int v_index, int corner_a, int corner_b)
@@ -269,25 +269,25 @@ void Collision_DebugDraw(const OBB& obb, const DirectX::XMFLOAT4& color)
             v[v_index + 1].uv = { 0.0f, 0.0f };
         };
 
-    // ��ʁi4�{�j
+    // 底面（4本）
     set_line(0, 0, 1);
     set_line(2, 1, 5);
     set_line(4, 5, 4);
     set_line(6, 4, 0);
 
-    // ��ʁi4�{�j
+    // 上面（4本）
     set_line(8, 3, 2);
     set_line(10, 2, 6);
     set_line(12, 6, 7);
     set_line(14, 7, 3);
 
-    // ������4��
+    // 縦の4本
     set_line(16, 0, 3);
     set_line(18, 1, 2);
     set_line(20, 5, 6);
     set_line(22, 4, 7);
 
-    // D3D�`�揈��
+    // D3D描画処理
     Shader_Begin();
 
     D3D11_MAPPED_SUBRESOURCE msr;

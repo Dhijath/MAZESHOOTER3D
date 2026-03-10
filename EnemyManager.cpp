@@ -11,6 +11,7 @@
 #include "EnemyTank.h"
 #include "EnemySpeed.h"
 #include "EnemySniper.h"
+#include "EnemyBoss.h"
 #include <cassert>
 #include <algorithm>
 
@@ -69,6 +70,9 @@ int EnemyManager::Spawn(const DirectX::XMFLOAT3& position, EnemyType type)
         break;
     case EnemyType::Sniper:
         e = std::make_unique<EnemySniper>();
+        break;
+    case EnemyType::Boss:
+        e = std::make_unique<EnemyBoss>();
         break;
     case EnemyType::Normal:
     default:

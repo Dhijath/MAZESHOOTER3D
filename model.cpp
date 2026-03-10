@@ -111,31 +111,32 @@ static void CreateMeshBuffers(MODEL* model, unsigned int m, aiMesh* mesh, float 
     // =========================
     // インデックスバッファ作成
     // =========================
-    unsigned int indexCount = mesh->mNumFaces * 3;
+    // 最大確保（三角形以外をスキップするので実際の数はこれ以下になる場合がある）
+    unsigned int* index = new unsigned int[mesh->mNumFaces * 3];
 
-    // ゼロチェック
-    if (indexCount == 0)
-    {
-        model->IndexBuffer[m] = nullptr;
-        return;
-    }
-    unsigned int* index = new unsigned int[indexCount];
-
+    unsigned int actualIndexCount = 0;
     for (unsigned int f = 0; f < mesh->mNumFaces; f++)
     {
         const aiFace* face = &mesh->mFaces[f];
 
-        // 三角形前提
-        assert(face->mNumIndices == 3);
+        // 三角形以外（線分・点・クアッドなど）はスキップ
+        if (face->mNumIndices != 3) continue;
 
-        index[f * 3 + 0] = face->mIndices[0];
-        index[f * 3 + 1] = face->mIndices[1];
-        index[f * 3 + 2] = face->mIndices[2];
+        index[actualIndexCount++] = face->mIndices[0];
+        index[actualIndexCount++] = face->mIndices[1];
+        index[actualIndexCount++] = face->mIndices[2];
+    }
+
+    if (actualIndexCount == 0)
+    {
+        delete[] index;
+        model->IndexBuffer[m] = nullptr;
+        return;
     }
 
     ZeroMemory(&bd, sizeof(bd));
     bd.Usage = D3D11_USAGE_DEFAULT;
-    bd.ByteWidth = sizeof(unsigned int) * indexCount;
+    bd.ByteWidth = sizeof(unsigned int) * actualIndexCount;
     bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
     bd.CPUAccessFlags = 0;
 
@@ -254,7 +255,8 @@ MODEL* ModelLoad(const char* FileName, float size)
         FileName,
         aiProcessPreset_TargetRealtime_MaxQuality |
         aiProcess_ConvertToLeftHanded |
-        aiProcess_GenBoundingBoxes);
+        aiProcess_GenBoundingBoxes |
+        aiProcess_PreTransformVertices);
 
     if (!model->AiScene)
     {

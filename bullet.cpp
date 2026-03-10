@@ -23,6 +23,7 @@
 #include "collision.h"
 #include "particle_thruster.h"
 #include "light.h"
+#include "player_camera.h"
 
 using namespace DirectX;
 
@@ -149,7 +150,7 @@ BeamBullet::BeamBullet(const XMFLOAT3& pos, const XMFLOAT3& vel, int damage, int
     // パーティクルエミッター生成
     m_emitter = new ThrusterEmitter(XMLoadFloat3(&m_position), 300.0, true);
     m_emitter->SetParticleTextureId(beamTexID);
-    m_emitter->SetScaleRange(0.05f, 0.12f);       // スケール範囲
+    m_emitter->SetScaleRange(0.5f, 0.8f);       // スケール範囲
     m_emitter->SetSpeedRange(0.5f, 1.5f);         // 速度範囲
     m_emitter->SetLifeRange(0.08f, 0.15f);        // 寿命範囲
     m_emitter->SetConeAngleDeg(8.0f);             // 噴射の広がり角度
@@ -303,9 +304,103 @@ const XMFLOAT3& BeamBullet::GetPrevPosition() const
 // ・速度ベクトルを正規化して向きを返す
 //
 // ■戻り値
-// ・正規化された進行方向ベクトル
+// ・正規化された進行方向GetFront
 //==============================================================================
 XMFLOAT3 BeamBullet::GetFront() const
+{
+    XMVECTOR v = XMLoadFloat3(&m_velocity);
+    if (XMVectorGetX(XMVector3LengthSq(v)) < 0.0001f) return { 0.0f, 0.0f, 1.0f };
+    XMFLOAT3 f;
+    XMStoreFloat3(&f, XMVector3Normalize(v));
+    return f;
+}
+
+//==============================================================================
+// MissileBullet（ミサイル弾）実装
+//==============================================================================
+
+//==============================================================================
+// コンストラクタ
+//==============================================================================
+MissileBullet::MissileBullet(const XMFLOAT3& pos, const XMFLOAT3& vel, int damage, float explosionRadius)
+    : m_position(pos), m_prevPosition(pos), m_velocity(vel), m_damage(damage), m_explosionRadius(explosionRadius)
+{
+}
+
+//==============================================================================
+// 壁衝突チェック
+//
+// ■役割
+// ・現在位置がマップの壁AABBと重なっていたら消滅フラグを立てる
+//==============================================================================
+void MissileBullet::CheckWallCollision()
+{
+    AABB missileAABB
+    {
+        { m_position.x - MISSILE_SIZE, m_position.y - MISSILE_SIZE, m_position.z - MISSILE_SIZE },
+        { m_position.x + MISSILE_SIZE, m_position.y + MISSILE_SIZE, m_position.z + MISSILE_SIZE }
+    };
+
+    for (int i = 0; i < Map_GetObjectsCount(); ++i)
+    {
+        const MapObject* mo = Map_GetObject(i);
+        if (!mo) continue;
+        if (mo->KindId != 2) continue;  // 壁のみチェック
+
+        if (Collision_IsOverLapAABB(missileAABB, mo->Aabb))
+        {
+            m_destroyed = true;
+            return;
+        }
+    }
+}
+
+//==============================================================================
+// 更新処理
+//==============================================================================
+void MissileBullet::Update(double elapsed_time)
+{
+    m_prevPosition = m_position;
+
+    if (!m_destroyed)
+    {
+        XMStoreFloat3(
+            &m_position,
+            XMLoadFloat3(&m_position) + XMLoadFloat3(&m_velocity) * static_cast<float>(elapsed_time)
+        );
+        m_accumulatedTime += elapsed_time;
+        CheckWallCollision();
+    }
+}
+
+//==============================================================================
+// 消滅判定
+//==============================================================================
+bool MissileBullet::IsDestroyed() const
+{
+    return m_destroyed || m_accumulatedTime >= LIFE_TIME;
+}
+
+//==============================================================================
+// 現在位置取得
+//==============================================================================
+const XMFLOAT3& MissileBullet::GetPosition() const
+{
+    return m_position;
+}
+
+//==============================================================================
+// 1フレーム前の位置取得
+//==============================================================================
+const XMFLOAT3& MissileBullet::GetPrevPosition() const
+{
+    return m_prevPosition;
+}
+
+//==============================================================================
+// 進行方向取得
+//==============================================================================
+XMFLOAT3 MissileBullet::GetFront() const
 {
     XMVECTOR v = XMLoadFloat3(&m_velocity);
     if (XMVectorGetX(XMVector3LengthSq(v)) < 0.0001f) return { 0.0f, 0.0f, 1.0f };
@@ -343,8 +438,11 @@ BulletManager::~BulletManager()
 //==============================================================================
 void BulletManager::Initialize()
 {
-    m_pModel = ModelLoad("Resource/Models/Bullet.fbx", 0.05f);
-    m_beamTexID = Texture_Load(L"Resource/Texture/effect000.jpg");
+    // 再初期化に備えて既存リソースを解放
+    Texture_Release(m_beamTexID);
+    m_beamTexID = -1;
+    ModelRelease(m_pModel);
+    m_pModel = nullptr;
 
     for (int i = 0; i < m_count; i++)
     {
@@ -352,6 +450,10 @@ void BulletManager::Initialize()
         m_bullets[i] = nullptr;
     }
     m_count = 0;
+    m_explosionCount = 0;
+
+    m_pModel = ModelLoad("Resource/Models/bullet.fbx", 0.1f);
+    m_beamTexID = Texture_Load(L"Resource/Texture/effect000.jpg");
 }
 
 //==============================================================================
@@ -362,6 +464,9 @@ void BulletManager::Initialize()
 //==============================================================================
 void BulletManager::Finalize()
 {
+    Texture_Release(m_beamTexID);
+    m_beamTexID = -1;
+
     ModelRelease(m_pModel);
     m_pModel = nullptr;
 
@@ -371,6 +476,7 @@ void BulletManager::Finalize()
         m_bullets[i] = nullptr;
     }
     m_count = 0;
+    m_explosionCount = 0;
 }
 
 //==============================================================================
@@ -392,9 +498,21 @@ void BulletManager::Update(double elapsed_time)
         // 消滅判定
         if (m_bullets[i]->IsDestroyed())
         {
-            // 通常弾のみ寿命切れエフェクト（ビームは内部で生成済み）
-            if (m_bullets[i]->GetType() == BulletType::Normal)
+            const BulletType type = m_bullets[i]->GetType();
+
+            if (type == BulletType::Normal)
+            {
+                // 通常弾のみ寿命切れエフェクト（ビームは内部で生成済み）
                 BulletHitEffect_Create(m_bullets[i]->GetPrevPosition());
+            }
+            else if (type == BulletType::Missile)
+            {
+                // ミサイル：爆発登録 + ヒットエフェクト
+                auto* m = static_cast<MissileBullet*>(m_bullets[i]);
+                AddExplosion(m->GetPrevPosition(), m->GetExplosionRadius(), m->GetDamage());
+                BulletHitEffect_Create(m->GetPrevPosition());
+            }
+            // BulletType::Beam はCheckWallCollision()内でエフェクト生成済み
 
             // 弾を削除して配列を詰める
             delete m_bullets[i];
@@ -415,16 +533,39 @@ void BulletManager::Update(double elapsed_time)
 // ■引数
 // ・index : 描画する弾のインデックス
 //==============================================================================
+
 void BulletManager::DrawNormal(int index)
 {
     Light_SetAmbient({ 10.0, 5.5f, 0.0f });
-    const XMMATRIX world = XMMatrixTranslationFromVector(
-        XMLoadFloat3(&m_bullets[index]->GetPosition())
-    );
+
+    const XMFLOAT3& posF = m_bullets[index]->GetPosition();
+
+    // 弾自身の進行方向（速度の正規化）を使用
+    const XMFLOAT3 bulletFrontF = m_bullets[index]->GetFront();
+
+    XMVECTOR pos = XMLoadFloat3(&posF);
+    XMVECTOR front = XMLoadFloat3(&bulletFrontF);
+
+    // 念のため正規化（Player側で正規化済みでもOK）
+    if (XMVectorGetX(XMVector3LengthSq(front)) < 0.0001f)
+        front = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+    else
+        front = XMVector3Normalize(front);
+
+    const XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+
+    // 「+Zをfrontに向ける」回転行列を作る（LookToの逆を使う）
+    const XMMATRIX viewLike = XMMatrixLookToLH(XMVectorZero(), front, up);
+    const XMMATRIX rot = XMMatrixInverse(nullptr, viewLike);
+
+    const XMMATRIX trans = XMMatrixTranslationFromVector(pos);
+
+    const XMMATRIX world = rot * trans;
+
     ModelDraw(m_pModel, world);
+
     Light_SetAmbient({ 1.0, 1.0, 1.0 });
 }
-
 //==============================================================================
 // ビーム弾の描画（パーティクル）
 //
@@ -451,7 +592,8 @@ void BulletManager::Draw()
 
     for (int i = 0; i < m_count; i++)
     {
-        if (m_bullets[i]->GetType() == BulletType::Normal)
+        const BulletType type = m_bullets[i]->GetType();
+        if (type == BulletType::Normal || type == BulletType::Missile)
             DrawNormal(i);
         else
             DrawBeam(i);
@@ -507,6 +649,13 @@ void BulletManager::Destroy(int index)
 
     // エフェクト生成
     BulletHitEffect_Create(m_bullets[index]->GetPrevPosition());
+
+    // ミサイルの場合は爆発イベントも登録（敵への直撃時）
+    if (m_bullets[index]->GetType() == BulletType::Missile)
+    {
+        auto* m = static_cast<MissileBullet*>(m_bullets[index]);
+        AddExplosion(m->GetPrevPosition(), m->GetExplosionRadius(), m->GetDamage());
+    }
 
     // 弾を削除して配列を詰める
     delete m_bullets[index];
@@ -590,10 +739,10 @@ OBB BulletManager::GetOBB(int index) const
     const XMFLOAT3& pos = m_bullets[index]->GetPosition();
     const XMFLOAT3  front = m_bullets[index]->GetFront();
 
-    const bool isBeam = (m_bullets[index]->GetType() == BulletType::Beam);
+    const BulletType btype = m_bullets[index]->GetType();
 
-    // 弾の種類に応じたサイズ設定
-    const XMFLOAT3 halfExtents = isBeam
+    // 弾の種類に応じたサイズ設定（ビームのみ細長いOBB、他は通常サイズ）
+    const XMFLOAT3 halfExtents = (btype == BulletType::Beam)
         ? XMFLOAT3{ BEAM_HALF_WIDTH_X,   BEAM_HALF_WIDTH_Y,   BEAM_HALF_LENGTH_Z }
     : XMFLOAT3{ BULLET_HALF_WIDTH_X, BULLET_HALF_WIDTH_Y, BULLET_HALF_LENGTH_Z };
 
@@ -681,4 +830,75 @@ OBB Bullet_GetOBB(int index)
 bool Bullet_IsBeam(int index)
 {
     return GetManager().IsBeam(index);
+}
+
+//==============================================================================
+// BulletManager：ミサイル関連メソッド実装
+//==============================================================================
+
+//==============================================================================
+// ミサイル弾生成
+//==============================================================================
+void BulletManager::CreateMissile(const XMFLOAT3& pos, const XMFLOAT3& vel, int damage, float radius)
+{
+    if (m_count >= MAX_BULLET) return;
+    m_bullets[m_count++] = new MissileBullet(pos, vel, damage, radius);
+}
+
+//==============================================================================
+// 爆発イベントをキューに追加
+//==============================================================================
+void BulletManager::AddExplosion(const XMFLOAT3& pos, float radius, int damage)
+{
+    if (m_explosionCount >= MAX_EXPLOSIONS) return;
+    m_pendingExplosions[m_explosionCount++] = { pos, radius, damage };
+}
+
+//==============================================================================
+// 未処理の爆発イベント数を返す
+//==============================================================================
+int BulletManager::GetPendingExplosionCount() const
+{
+    return m_explosionCount;
+}
+
+//==============================================================================
+// 未処理の爆発イベントを取得
+//==============================================================================
+ExplosionEvent BulletManager::GetPendingExplosion(int i) const
+{
+    if (i < 0 || i >= m_explosionCount) return {};
+    return m_pendingExplosions[i];
+}
+
+//==============================================================================
+// 未処理の爆発イベントをすべてクリア
+//==============================================================================
+void BulletManager::ClearPendingExplosions()
+{
+    m_explosionCount = 0;
+}
+
+//==============================================================================
+// グローバル関数（ミサイル関連）
+//==============================================================================
+
+void Bullet_CreateMissile(const XMFLOAT3& pos, const XMFLOAT3& vel, int dmg, float radius)
+{
+    GetManager().CreateMissile(pos, vel, dmg, radius);
+}
+
+int Bullet_GetPendingExplosionCount()
+{
+    return GetManager().GetPendingExplosionCount();
+}
+
+ExplosionEvent Bullet_GetPendingExplosion(int i)
+{
+    return GetManager().GetPendingExplosion(i);
+}
+
+void Bullet_ClearPendingExplosions()
+{
+    GetManager().ClearPendingExplosions();
 }

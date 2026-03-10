@@ -163,7 +163,7 @@ void EnemyBullet_Draw()
 //==============================================================================
 // エネミー弾生成
 //==============================================================================
-void EnemyBullet_Create(const XMFLOAT3& position, const XMFLOAT3& velocity, int damage)
+void EnemyBullet_Create(const XMFLOAT3& position, const XMFLOAT3& velocity, int damage, float speed)
 {
     // 上限チェック
     if (g_Count >= MAX_ENEMY_BULLET) return;
@@ -176,11 +176,11 @@ void EnemyBullet_Create(const XMFLOAT3& position, const XMFLOAT3& velocity, int 
     b.damage = damage;
     b.destroyed = false;
 
-    // 速度をBULLET_SPEEDに正規化する
+    // 速度を指定スピードに正規化する
     XMVECTOR v = XMLoadFloat3(&velocity);
     float len = XMVectorGetX(XMVector3Length(v));
     if (len > 0.0001f)
-        v = v / len * BULLET_SPEED;
+        v = v / len * speed;
     XMStoreFloat3(&b.velocity, v);
 
     ++g_Count;
