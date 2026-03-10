@@ -139,10 +139,18 @@ namespace
         const AABB bodyAABB = ModelGetAABB(g_pPlayerModel, bodyWorldPos);
         const AABB thrusterLocal = ModelGetAABB(g_pThrusterModel, { 0.0f, 0.0f, 0.0f });
 
-        XMMATRIX thrusterLocalRot = XMMatrixRotationY(g_ThrusterLocalYaw);
+        // スラスターのローカル中心を計算
+        const float centerX = (thrusterLocal.min.x + thrusterLocal.max.x) * 0.5f;
+        const float centerY = (thrusterLocal.min.y + thrusterLocal.max.y) * 0.5f;
+        const float centerZ = (thrusterLocal.min.z + thrusterLocal.max.z) * 0.5f;
 
-        constexpr float THRUSTER_FORWARD_OFFSET = 0.15f;
+        // 中心を原点に移動 → 回転 → 中心を戻す
+        XMMATRIX toCenter = XMMatrixTranslation(-centerX, -centerY, -centerZ);
+        XMMATRIX rot = XMMatrixRotationY(g_ThrusterLocalYaw);
+        XMMATRIX fromCenter = XMMatrixTranslation(centerX, centerY, centerZ);
 
+        XMMATRIX thrusterLocalRot = toCenter * rot * fromCenter;
+        constexpr float THRUSTER_FORWARD_OFFSET = -0.05f;
         XMVECTOR playerFront = XMVector3Normalize(XMLoadFloat3(&g_PlayerFront));
 
         XMMATRIX thrusterTrans = XMMatrixTranslation(
@@ -159,7 +167,8 @@ namespace
         constexpr float BARREL_FLIP_DEG = 180.0f;  // 上下反転（Z軸）
         constexpr float BARREL_LEAN_DEG = -30.0f;  // 左傾き（Z軸）調整可
         constexpr float BARREL_TILT_DEG = 0.0f;  // ナナメ角度（X軸）調整可
-        constexpr float BARREL_SIDE_X = 0.40f;  // 右横オフセット（調整可）
+        constexpr float BARREL_SIDE_X = 0.30f;  // 右横オフセット（調整可）
+        constexpr float BARREL_FORWARD_OFFSET = 0.3f;  // 前方オフセット（調整可）
 
         const XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 
@@ -176,26 +185,37 @@ namespace
 
         // バレル原点位置（ボディ底面・右側）
         const XMFLOAT3 barrelOriginPos = {
-            g_PlayerPosition.x + XMVectorGetX(playerRight) * BARREL_SIDE_X,
+            g_PlayerPosition.x + XMVectorGetX(playerRight) * BARREL_SIDE_X
+                               + XMVectorGetX(playerFront) * BARREL_FORWARD_OFFSET,  // 追加
             bodyAABB.min.y,
             g_PlayerPosition.z + XMVectorGetZ(playerRight) * BARREL_SIDE_X
+                               + XMVectorGetZ(playerFront) * BARREL_FORWARD_OFFSET   // 追加
         };
         XMMATRIX barrelTrans = XMMatrixTranslation(
             barrelOriginPos.x, barrelOriginPos.y, barrelOriginPos.z);
 
         // 照準方向：ロックオン対象 or カメラ前方 XZ
         XMVECTOR aimDir;
-        XMFLOAT3 lockOnPos;
-        if (Game_GetLockOnWorldPos(&lockOnPos))
+        if (g_PlayerBodyFollowCamera)
         {
-            XMVECTOR toTarget = XMLoadFloat3(&lockOnPos)
-                - XMLoadFloat3(&barrelOriginPos);
-            aimDir = XMVector3Normalize(toTarget);
+            // カメラ追従モード：ロックオン or カメラ前方
+            XMFLOAT3 lockOnPos;
+            if (Game_GetLockOnWorldPos(&lockOnPos))
+            {
+                XMVECTOR toTarget = XMLoadFloat3(&lockOnPos)
+                    - XMLoadFloat3(&barrelOriginPos);  // シールドは &shieldOriginPos
+                aimDir = XMVector3Normalize(toTarget);
+            }
+            else
+            {
+                XMFLOAT3 camFront = Player_Camera_GetFront();
+                aimDir = XMVector3Normalize(XMVectorSet(camFront.x, 0.0f, camFront.z, 0.0f));
+            }
         }
         else
         {
-            XMFLOAT3 camFront = Player_Camera_GetFront();
-            aimDir = XMVector3Normalize(XMVectorSet(camFront.x, 0.0f, camFront.z, 0.0f));
+            // 移動方向モード：プレイヤー正面をそのまま使う
+            aimDir = XMVector3Normalize(XMLoadFloat3(&g_PlayerFront));
         }
 
         // ローカル -Z がマズル方向なので aimZ を反転（バレルモデルのデフォルト向き対応）
@@ -224,6 +244,99 @@ namespace
             XMMatrixRotationX(XMConvertToRadians(BARREL_TILT_DEG));
 
         return localRot * aimRot * barrelTrans;
+    }
+
+    static XMMATRIX Player_GetShieldWorldMatrix()
+    {
+        constexpr float SHIELD_FLIP_DEG = 0.0f;  // 上下反転
+        constexpr float SHIELD_LEAN_DEG = 0.0f;  // 右傾き（バレルと逆）
+        constexpr float SHIELD_TILT_DEG = 0.0f;  // ナナメ角度
+        constexpr float SHIELD_SIDE_X = -0.30f;  // 左横オフセット（マイナス）
+        constexpr float SHIELD_FORWARD_OFFSET = 0.2f; // 前方オフセット
+=======
+=======
+>>>>>>> 1e32daaaec70d78f275c77962721b2a71773ffd6
+        constexpr float SHIELD_FLIP_DEG = 180.0f;  // 上下反転
+        constexpr float SHIELD_LEAN_DEG = 30.0f;  // 右傾き（バレルと逆）
+        constexpr float SHIELD_TILT_DEG = 0.0f;  // ナナメ角度
+        constexpr float SHIELD_SIDE_X = -0.30f;  // 左横オフセット（マイナス）
+        constexpr float SHIELD_FORWARD_OFFSET = 0.3f; // 前方オフセット
+<<<<<<< HEAD
+>>>>>>> 1e32daaaec70d78f275c77962721b2a71773ffd6
+=======
+>>>>>>> 1e32daaaec70d78f275c77962721b2a71773ffd6
+
+        const XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+
+        XMVECTOR playerFront = XMVector3Normalize(XMLoadFloat3(&g_PlayerFront));
+        XMVECTOR playerRight = XMVector3Normalize(XMVector3Cross(up, playerFront));
+
+        const XMFLOAT3 bodyWorldPos = {
+            g_PlayerPosition.x,
+            g_PlayerPosition.y + PLAYER_HEIGHT_OFFSET,
+            g_PlayerPosition.z
+        };
+        const AABB bodyAABB = ModelGetAABB(g_pPlayerModel, bodyWorldPos);
+
+        const XMFLOAT3 shieldOriginPos = {
+            g_PlayerPosition.x + XMVectorGetX(playerRight) * SHIELD_SIDE_X
+                               + XMVectorGetX(playerFront) * SHIELD_FORWARD_OFFSET,
+            bodyAABB.min.y+0.1f,
+            g_PlayerPosition.z + XMVectorGetZ(playerRight) * SHIELD_SIDE_X
+                               + XMVectorGetZ(playerFront) * SHIELD_FORWARD_OFFSET
+        };
+
+        XMMATRIX shieldTrans = XMMatrixTranslation(
+            shieldOriginPos.x, shieldOriginPos.y, shieldOriginPos.z);
+
+        // バレルと同じ照準方向ロジック
+// 変更後（バレル・シールド共通）
+        XMVECTOR aimDir;
+        if (g_PlayerBodyFollowCamera)
+        {
+            // カメラ追従モード：ロックオン or カメラ前方
+            XMFLOAT3 lockOnPos;
+            if (Game_GetLockOnWorldPos(&lockOnPos))
+            {
+                XMVECTOR toTarget = XMLoadFloat3(&lockOnPos)
+                    - XMLoadFloat3(&shieldOriginPos);  // シールドは &shieldOriginPos
+                aimDir = XMVector3Normalize(toTarget);
+            }
+            else
+            {
+                XMFLOAT3 camFront = Player_Camera_GetFront();
+                aimDir = XMVector3Normalize(XMVectorSet(camFront.x, 0.0f, camFront.z, 0.0f));
+            }
+        }
+        else
+        {
+            // 移動方向モード：プレイヤー正面をそのまま使う
+            aimDir = XMVector3Normalize(XMLoadFloat3(&g_PlayerFront));
+        }
+
+        XMVECTOR aimZ = XMVectorNegate(aimDir);
+        XMVECTOR aimX = XMVector3Normalize(XMVector3Cross(up, aimZ));
+        if (XMVectorGetX(XMVector3LengthSq(aimX)) < 0.001f)
+            aimX = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
+        XMVECTOR aimY = XMVector3Cross(aimZ, aimX);
+
+        XMFLOAT3 ax, ay, az;
+        XMStoreFloat3(&ax, aimX);
+        XMStoreFloat3(&ay, aimY);
+        XMStoreFloat3(&az, aimZ);
+
+        XMMATRIX aimRot(
+            ax.x, ax.y, ax.z, 0.0f,
+            ay.x, ay.y, ay.z, 0.0f,
+            az.x, az.y, az.z, 0.0f,
+            0.0f, 0.0f, 0.0f, 1.0f
+        );
+
+        XMMATRIX localRot =
+            XMMatrixRotationZ(XMConvertToRadians(SHIELD_FLIP_DEG + SHIELD_LEAN_DEG)) *
+            XMMatrixRotationX(XMConvertToRadians(SHIELD_TILT_DEG));
+
+        return localRot * aimRot * shieldTrans;
     }
 
     static XMMATRIX Player_GetHeadWorldMatrix()
@@ -606,7 +719,13 @@ void Player_Update(double elapsed_time)
 
     // K キーでボディの向きモード切り替え
     if (KeyLogger_IsTrigger(KK_K))
+    {
+
         g_PlayerBodyFollowCamera = !g_PlayerBodyFollowCamera;
+
+
+
+    }
 
     // ボディの向き更新
     if (g_PlayerBodyFollowCamera)
@@ -792,6 +911,15 @@ void Player_Update(double elapsed_time)
         //float lifeMin = 0.18f + t * 0.30f;
         //float lifeMax = 0.45f + t * 0.80f;
         //g_PlayerThrusterEmitter->SetLifeRange(lifeMin, lifeMax);
+
+        float speedT = std::clamp((g_PlayerSpeedMultiplier - 1.0f) / 1.0f, 0.0f, 1.0f);
+        float lifeMin = 0.18f * (1.0f - speedT * 0.7f);  // 速いほど短命
+        float lifeMax = 0.26f * (1.0f - speedT * 0.7f);
+      //  g_PlayerThrusterEmitter->SetLifeRange(lifeMin, lifeMax);
+
+        float speedMin = 1.2f + speedT * 2.0f;  // 速いほど後方へ強く吹き出す
+        float speedMax = 2.0f + speedT * 3.0f;
+        g_PlayerThrusterEmitter->SetSpeedRange(speedMin, speedMax);
     }
 
     if (g_PlayerThrusterEmitter)
@@ -895,6 +1023,11 @@ void Player_Draw() // プレイヤー描画（無敵点滅の考慮、モデル�
     if (g_pBarrelModel)
     {
         ModelDraw(g_pBarrelModel, Player_GetBarrelWorldMatrix());
+    }
+
+    if (g_pShieldModel)
+    {
+        ModelDraw(g_pShieldModel, Player_GetShieldWorldMatrix());
     }
 
     if (g_PlayerThrusterEmitter)

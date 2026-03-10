@@ -213,7 +213,7 @@ public:
 
 private:
     static constexpr double FIRE_INTERVAL = 0.7;   // 連射間隔（秒）
-    static constexpr float  BULLET_SPEED  = 20.0f; // ペレット弾速（単位/秒）
+    static constexpr float  BULLET_SPEED  = 30.0f; // ペレット弾速（単位/秒）
     static constexpr int    BASE_DAMAGE   = 45;      // 1ペレットの基礎ダメージ
     static constexpr int    PELLET_COUNT  = 9;      // 1射のペレット数
     static constexpr float  SPREAD_DEG   = 7.0f;  // 最大拡散角（度）
