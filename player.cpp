@@ -186,15 +186,15 @@ namespace
         // バレル原点位置（ボディ底面・右側）
         const XMFLOAT3 barrelOriginPos = {
             g_PlayerPosition.x + XMVectorGetX(playerRight) * BARREL_SIDE_X
-                               + XMVectorGetX(playerFront) * BARREL_FORWARD_OFFSET,  // 追加
+                               + XMVectorGetX(playerFront) * BARREL_FORWARD_OFFSET,
             bodyAABB.min.y,
             g_PlayerPosition.z + XMVectorGetZ(playerRight) * BARREL_SIDE_X
-                               + XMVectorGetZ(playerFront) * BARREL_FORWARD_OFFSET   // 追加
+                               + XMVectorGetZ(playerFront) * BARREL_FORWARD_OFFSET
         };
         XMMATRIX barrelTrans = XMMatrixTranslation(
             barrelOriginPos.x, barrelOriginPos.y, barrelOriginPos.z);
 
-        // 照準方向：ロックオン対象 or カメラ前方 XZ
+        // 照準方向：カメラ追従モード or プレイヤー正面固定
         XMVECTOR aimDir;
         if (g_PlayerBodyFollowCamera)
         {
@@ -203,7 +203,7 @@ namespace
             if (Game_GetLockOnWorldPos(&lockOnPos))
             {
                 XMVECTOR toTarget = XMLoadFloat3(&lockOnPos)
-                    - XMLoadFloat3(&barrelOriginPos);  // シールドは &shieldOriginPos
+                    - XMLoadFloat3(&barrelOriginPos);
                 aimDir = XMVector3Normalize(toTarget);
             }
             else
@@ -248,23 +248,11 @@ namespace
 
     static XMMATRIX Player_GetShieldWorldMatrix()
     {
-        constexpr float SHIELD_FLIP_DEG = 0.0f;  // 上下反転
-        constexpr float SHIELD_LEAN_DEG = 0.0f;  // 右傾き（バレルと逆）
-        constexpr float SHIELD_TILT_DEG = 0.0f;  // ナナメ角度
-        constexpr float SHIELD_SIDE_X = -0.30f;  // 左横オフセット（マイナス）
+        constexpr float SHIELD_FLIP_DEG = 0.0f;   // 上下反転なし（修正済み）
+        constexpr float SHIELD_LEAN_DEG = 0.0f;   // 傾きなし
+        constexpr float SHIELD_TILT_DEG = 0.0f;   // ナナメ角度
+        constexpr float SHIELD_SIDE_X = -0.30f;   // 左横オフセット（マイナス）
         constexpr float SHIELD_FORWARD_OFFSET = 0.2f; // 前方オフセット
-=======
-=======
->>>>>>> 1e32daaaec70d78f275c77962721b2a71773ffd6
-        constexpr float SHIELD_FLIP_DEG = 180.0f;  // 上下反転
-        constexpr float SHIELD_LEAN_DEG = 30.0f;  // 右傾き（バレルと逆）
-        constexpr float SHIELD_TILT_DEG = 0.0f;  // ナナメ角度
-        constexpr float SHIELD_SIDE_X = -0.30f;  // 左横オフセット（マイナス）
-        constexpr float SHIELD_FORWARD_OFFSET = 0.3f; // 前方オフセット
-<<<<<<< HEAD
->>>>>>> 1e32daaaec70d78f275c77962721b2a71773ffd6
-=======
->>>>>>> 1e32daaaec70d78f275c77962721b2a71773ffd6
 
         const XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 
@@ -281,7 +269,7 @@ namespace
         const XMFLOAT3 shieldOriginPos = {
             g_PlayerPosition.x + XMVectorGetX(playerRight) * SHIELD_SIDE_X
                                + XMVectorGetX(playerFront) * SHIELD_FORWARD_OFFSET,
-            bodyAABB.min.y+0.1f,
+            bodyAABB.min.y + 0.1f,
             g_PlayerPosition.z + XMVectorGetZ(playerRight) * SHIELD_SIDE_X
                                + XMVectorGetZ(playerFront) * SHIELD_FORWARD_OFFSET
         };
@@ -289,8 +277,7 @@ namespace
         XMMATRIX shieldTrans = XMMatrixTranslation(
             shieldOriginPos.x, shieldOriginPos.y, shieldOriginPos.z);
 
-        // バレルと同じ照準方向ロジック
-// 変更後（バレル・シールド共通）
+        // 照準方向：カメラ追従モード or プレイヤー正面固定
         XMVECTOR aimDir;
         if (g_PlayerBodyFollowCamera)
         {
@@ -299,7 +286,7 @@ namespace
             if (Game_GetLockOnWorldPos(&lockOnPos))
             {
                 XMVECTOR toTarget = XMLoadFloat3(&lockOnPos)
-                    - XMLoadFloat3(&shieldOriginPos);  // シールドは &shieldOriginPos
+                    - XMLoadFloat3(&shieldOriginPos);
                 aimDir = XMVector3Normalize(toTarget);
             }
             else
@@ -720,11 +707,7 @@ void Player_Update(double elapsed_time)
     // K キーでボディの向きモード切り替え
     if (KeyLogger_IsTrigger(KK_K))
     {
-
         g_PlayerBodyFollowCamera = !g_PlayerBodyFollowCamera;
-
-
-
     }
 
     // ボディの向き更新
@@ -878,7 +861,6 @@ void Player_Update(double elapsed_time)
         if (t < 0.33f)
         {
             float s = t / 0.33f;
-
             r = 1.5f * s;
             g = 1.0f;
             b = 2.5f;
@@ -899,23 +881,11 @@ void Player_Update(double elapsed_time)
         }
         g_PlayerThrusterEmitter->SetColor({ r, g, b, 1.0f });
 
-
-
-        // スケール：倍率が上がるほど小さくなる（下限 0.0001f）
-        //
-        //float scaleMin = std::max(0.0005f - t * 0.0004f, 0.0001f);
-        //float scaleMax = std::max(0.15f + t * 0.10f, 0.05f);
-        // g_PlayerThrusterEmitter->SetScaleRange(scaleMin, scaleMax);
-
-        // 寿命：倍率が上がるほど長くなり、量が増えて見える
-        //float lifeMin = 0.18f + t * 0.30f;
-        //float lifeMax = 0.45f + t * 0.80f;
-        //g_PlayerThrusterEmitter->SetLifeRange(lifeMin, lifeMax);
-
+        // スラスター置き去り対策：高速時はパーティクルを短命・高速にする
         float speedT = std::clamp((g_PlayerSpeedMultiplier - 1.0f) / 1.0f, 0.0f, 1.0f);
         float lifeMin = 0.18f * (1.0f - speedT * 0.7f);  // 速いほど短命
         float lifeMax = 0.26f * (1.0f - speedT * 0.7f);
-      //  g_PlayerThrusterEmitter->SetLifeRange(lifeMin, lifeMax);
+        g_PlayerThrusterEmitter->SetLifeRange(lifeMin, lifeMax);
 
         float speedMin = 1.2f + speedT * 2.0f;  // 速いほど後方へ強く吹き出す
         float speedMax = 2.0f + speedT * 3.0f;
