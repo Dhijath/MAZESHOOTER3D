@@ -130,7 +130,7 @@ namespace
     constexpr float CELL_SIZE = 1.0f;  // 1タイル=1m
     constexpr float FLOOR_Y = 0.5f;  // 床中心（底面がY=0）
 
-    constexpr float WALL_HEIGHT = 3.0f;
+    constexpr float WALL_HEIGHT = 5.0f;
 
     // 天井の中心Y（壁の上に1枚）
     // 天井は1m厚のCubeを1枚置く想定なので +0.5＜現在メッシュフィールドへの以降に成功し削除
