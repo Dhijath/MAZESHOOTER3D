@@ -31,7 +31,7 @@ public:
     static constexpr float MAX_SPEED_MULT = 0.5f;  // 最大速度の倍率（半分に制限）
 
     static constexpr int   SHIELD_MAX_HP  = 300;   // 盾の最大HP
-    static constexpr float SHIELD_DIST    = 0.35f; // 盾の前方オフセット距離（m）
+    static constexpr float SHIELD_DIST    = 0.7f; // 盾の前方オフセット距離（m）
 
     //==========================================================================
     // 初期化処理

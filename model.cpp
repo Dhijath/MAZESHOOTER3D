@@ -517,3 +517,65 @@ AABB ModelGetAABB(MODEL* model, const DirectX::XMFLOAT3& position)
 
     return aabb;
 }
+
+void ModelDrawWithoutBegin(MODEL* model, const DirectX::XMMATRIX& mtxWorld)
+{
+    if (model == nullptr || model->AiScene == nullptr || model->AiScene->mNumMeshes == 0)
+        return;
+
+    // Shader3d_Begin() を呼ばない（呼び出し元が既にシェーダーをセット済み）
+    Direct3D_GetContext()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    // ワールド行列（呼び出し元のシェーダーのCBに渡す）
+    // ※ ShaderEdge_BeginNormalPass の場合は ShaderEdge_SetWorldMatrix を先に呼ぶこと
+
+
+    for (unsigned int m = 0; m < model->AiScene->mNumMeshes; m++)
+    {
+        aiMesh* mesh = model->AiScene->mMeshes[m];
+
+        if (mesh->mNumFaces == 0) continue;
+        if (!model->VertexBuffer[m] || !model->IndexBuffer[m]) continue;
+
+        // テクスチャ設定
+        aiString texName;
+        aiMaterial* aimaterial =
+            model->AiScene->mMaterials[mesh->mMaterialIndex];
+        aimaterial->GetTexture(aiTextureType_DIFFUSE, 0, &texName);
+
+        bool textureSet = false;
+        if (texName.length != 0)
+        {
+            auto it = model->Texture.find(texName.C_Str());
+            if (it != model->Texture.end() && it->second)
+            {
+                ID3D11ShaderResourceView* srv = it->second;
+                Direct3D_GetContext()->PSSetShaderResources(0, 1, &srv);
+                textureSet = true;
+            }
+        }
+        if (!textureSet)
+        {
+            Set_Texture(g_TextureWhite);
+        }
+
+        // マテリアルカラー設定
+        {
+            aiColor3D diffuse;
+            aimaterial->Get(AI_MATKEY_COLOR_DIFFUSE, diffuse);
+            Shader3d_SetColor(XMFLOAT4(diffuse.r, diffuse.g, diffuse.b, 1.0f));
+        }
+
+        // VB / IB 設定＆描画
+        UINT stride = sizeof(Vertex3D);
+        UINT offset = 0;
+
+        Direct3D_GetContext()->IASetVertexBuffers(
+            0, 1, &model->VertexBuffer[m], &stride, &offset);
+        Direct3D_GetContext()->IASetIndexBuffer(
+            model->IndexBuffer[m], DXGI_FORMAT_R32_UINT, 0);
+
+        UINT indexCount = mesh->mNumFaces * 3;
+        Direct3D_GetContext()->DrawIndexed(indexCount, 0, 0);
+    }
+}

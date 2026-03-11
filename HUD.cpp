@@ -95,7 +95,7 @@ static int s_TexSightBeam = -1;
 static int s_TexSightNormal = -1;
 
 // 照準描画サイズ
-static const float SIGHT_SIZE = 64.0f;
+static const float SIGHT_SIZE = 320.0f;
 
 //==============================================================================
 // 左下：ステータスUI（スタック表示）ATK

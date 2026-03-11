@@ -193,6 +193,7 @@
     <ClCompile Include="meshfield.cpp" />
     <ClCompile Include="Minimap.cpp" />
     <ClCompile Include="model.cpp" />
+    <ClCompile Include="ModelToon.cpp" />
     <ClCompile Include="mouse.cpp" />
     <ClCompile Include="Option.cpp" />
     <ClCompile Include="pad_logger.cpp" />
@@ -210,6 +211,8 @@
     <ClCompile Include="shader.cpp" />
     <ClCompile Include="shader3d.cpp" />
     <ClCompile Include="shader3d_anim.cpp" />
+    <ClCompile Include="ShaderEdge.cpp" />
+    <ClCompile Include="ShaderToon.cpp" />
     <ClCompile Include="Shader_Billboard.cpp" />
     <ClCompile Include="shader_field.cpp" />
     <ClCompile Include="Shadow_Map.cpp" />
@@ -267,6 +270,7 @@
     <ClInclude Include="meshfield.h" />
     <ClInclude Include="Minimap.h" />
     <ClInclude Include="model.h" />
+    <ClInclude Include="ModelToon.h" />
     <ClInclude Include="model_aabb_helper.h" />
     <ClInclude Include="mouse.h" />
     <ClInclude Include="Option.h" />
@@ -285,6 +289,8 @@
     <ClInclude Include="shader.h" />
     <ClInclude Include="shader3d.h" />
     <ClInclude Include="shader3d_anim.h" />
+    <ClInclude Include="ShaderEdge.h" />
+    <ClInclude Include="ShaderToon.h" />
     <ClInclude Include="Shader_Billboard.h" />
     <ClInclude Include="shader_field.h" />
     <ClInclude Include="Shadow_Map.h" />
@@ -310,6 +316,18 @@
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)Resource/Shader/%(Filename).cso</ObjectFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)Resource/Shader/%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
+    <FxCompile Include="shader_pixel_edge.hlsl">
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)Resource/Shader/%(Filename).cso</ObjectFileOutput>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+    </FxCompile>
+    <FxCompile Include="shader_pixel_normal.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)Resource/Shader/%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
+    <FxCompile Include="shader_pixel_outline.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)Resource/Shader/%(Filename).cso</ObjectFileOutput>
     </FxCompile>
     <FxCompile Include="shader_pixel_shadow.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
@@ -363,6 +381,10 @@
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)Resource/Shader/%(Filename).cso</ObjectFileOutput>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)Resource/Shader/%(Filename).cso</ObjectFileOutput>
     </FxCompile>
+    <FxCompile Include="shader_pixel_toon.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)Resource/Shader/%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
     <FxCompile Include="shader_pixel_unilt.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
@@ -393,6 +415,14 @@
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Vertex</ShaderType>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)Resource/Shader/%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
+    <FxCompile Include="shader_vertex_edge.hlsl">
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)Resource/Shader/%(Filename).cso</ObjectFileOutput>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+    </FxCompile>
+    <FxCompile Include="shader_vertex_outline.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)Resource/Shader/%(Filename).cso</ObjectFileOutput>
     </FxCompile>
     <FxCompile Include="shader_vertex_shadow_3d.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>

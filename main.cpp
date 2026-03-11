@@ -44,6 +44,8 @@
 #include "Game_Manager.h"
 #include "pad_logger.h"
 #include "Option.h"
+#include "ShaderToon.h"
+#include "ShaderEdge.h"
 
 using namespace DirectX;
 
@@ -74,6 +76,13 @@ int APIENTRY WinMain(
 	BlobShadow::Initialize(Direct3D_GetDevice());
 
 	Shader_Initialize(Direct3D_GetDevice(), Direct3D_GetContext());
+
+
+
+	ShaderToon_Initialize(Direct3D_GetDevice(), Direct3D_GetContext());
+
+	ShaderEdge_Initialize(Direct3D_GetDevice(), Direct3D_GetContext());
+
 
 	Shader3d_Initialize(Direct3D_GetDevice(), Direct3D_GetContext());
 
@@ -243,6 +252,10 @@ int APIENTRY WinMain(
 	Shader_field_Finalize();
 	WallShader_Finalize();
 	Shader3d_Finalize();
+
+	ShaderEdge_Finalize();
+	ShaderToon_Finalize();
+
 	Shader_Finalize();
 	
 	Collision_DebugFinalize();

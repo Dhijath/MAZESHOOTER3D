@@ -38,6 +38,8 @@
 #include "Player_topCamera.h"                            // 旧固定追従カメラ
 #include "WallShader.h"                                  // 壁用シェーダへView/Proj設定
 #include "map.h"
+#include "ShaderToon.h"
+#include "ShaderEdge.h"
 
 using namespace DirectX;                                 // DirectXMath名前空間
 
@@ -93,6 +95,13 @@ static void ApplyViewProjToShaders(const XMMATRIX& view, const XMMATRIX& proj) /
     Shader_Billboard_SetProjectMatrix(proj);             // BillboardへProj
     WallShader_SetViewMatrix(view);                      // 壁へView
     WallShader_SetProjectMatrix(proj);                   // 壁へProj
+
+
+    ShaderToon_SetViewMatrix(view);                      //トゥーン用view
+    ShaderToon_SetProjectMatrix(proj);                   //トゥーン用proj
+
+    ShaderEdge_SetViewMatrix(view);
+    ShaderEdge_SetProjectMatrix(proj);
 }                                                        // 終了
 
 //==============================================================================

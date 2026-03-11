@@ -95,7 +95,7 @@ void EnemySpeed::Update(double elapsed_time)
 //==============================================================================
 void EnemySpeed::Draw()
 {
-    Light_SetAmbient({ 40.0, 1.0, 1.0 });
+    Light_SetAmbient({ 4.0, 1.0, 1.0 });
     if (!m_IsAlive) return;
     if (!m_pModel) return;
 

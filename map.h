@@ -269,4 +269,6 @@ bool Map_HasLineOfSight(
     const DirectX::XMFLOAT3& from,
     const DirectX::XMFLOAT3& to);
 
+void Map_DrawForMinimap();
+
 #endif // MAP_H

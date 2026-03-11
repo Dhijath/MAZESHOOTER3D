@@ -112,6 +112,7 @@ namespace
     static Enemy* g_pBossEnemy = nullptr; // ボスへの生ポインタ（生存中のみ有効）
     static bool   g_BossDefeated = false;   // ボスが撃破されたか
     static bool   g_IsBossRoom = false;   // ボス部屋フェーズ中フラグ
+    static int g_TexLockon = -1;
 }
 
 //==============================================================================
@@ -119,6 +120,8 @@ namespace
 //==============================================================================
 void Game_Initialize()
 {
+
+    g_TexLockon = Texture_Load(L"Resource/Texture/Lockon.png");
     // 3D描画用ステートに戻す
 
     Shader3d_Begin();             // ← 3D用シェーダ・行列
@@ -484,13 +487,17 @@ void Game_Draw()
     // エネミー描画（モデル扱いなので丸影なし側）
     //複数種版に変更
     g_EnemyManager.Draw();
-    Player_Draw();
+
+
+
 
     ItemManager_Draw();
 
     Bullet_Draw();
     EnemyBullet_Draw();
     BulletHitEffect_Draw();
+
+    Player_Draw();
 
 
 
@@ -553,7 +560,7 @@ void Game_Draw()
                 sx > 0.0f && sx < W &&
                 sy > 0.0f && sy < H)
             {
-                const int sightTex = HUD_GetSightTexture();
+                const int sightTex = g_TexLockon;//HUD_GetSightTexture();
                 if (sightTex >= 0)
                 {
                     // 距離でスケール（近い=大きい、遠い=小さい）

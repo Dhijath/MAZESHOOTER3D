@@ -21,6 +21,7 @@
 #include "ItemManager.h"
 #include <algorithm>
 #include <cmath>
+#include "ModelToon.h"
 
 using namespace DirectX;
 
@@ -104,7 +105,7 @@ void EnemyTank::Draw()
 {
     if (!m_IsAlive) return;
     if (!m_pModel) return;
-    Light_SetAmbient({ 10.0, 10.0, 10.0 });
+    Light_SetAmbient({ 1.0, 1.0, 1.0 });
 
     Light_SetSpecularWorld(
         Player_Camera_GetPosition(),
@@ -127,7 +128,7 @@ void EnemyTank::Draw()
             m_Position.y + ENEMY_HEIGHT * 1.0f,
             m_Position.z);
 
-    ModelDraw(m_pModel, rot * trans);
+    ModelDrawToon(m_pModel, rot * trans);
 
     // ---- 盾パーツ（生存中のみ描画）----
     if (m_pShield && m_ShieldAlive)
@@ -142,7 +143,7 @@ void EnemyTank::Draw()
             m_Position.y + ENEMY_HEIGHT,
             m_Position.z + m_Front.z * SHIELD_DIST);
 
-        ModelDraw(m_pShield, shieldRot * shieldTrans);
+        ModelDrawToon(m_pShield, shieldRot * shieldTrans);
     }
 
     // ---- 銃パーツ ----

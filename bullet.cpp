@@ -453,7 +453,7 @@ void BulletManager::Initialize()
     m_count = 0;
     m_explosionCount = 0;
 
-    m_pModel = ModelLoad("Resource/Models/bullet.fbx", 0.1f);
+    m_pModel = ModelLoad("Resource/Models/bullet.fbx", 0.15f);
     m_beamTexID = Texture_Load(L"Resource/Texture/effect000.jpg");
 }
 

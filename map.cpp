@@ -1744,6 +1744,30 @@ void Map_GenerateBossRoom(std::uint32_t /*seed*/)
     }
 }
 
+void Map_DrawForMinimap()
+{
+    Shader3d_Begin();
+    Light_SetAmbient({ 1.0f, 1.0f, 1.0f });
+
+    for (const MapObject& o : g_MapObjects)
+    {
+        if (o.KindId == KIND_MINIMAP_FLOOR)
+        {
+            Shader3d_SetColor({ 0.5f, 0.5f, 0.5f, 1.0f });
+            const XMMATRIX world = XMMatrixTranslation(o.Position.x, o.Position.y, o.Position.z);
+            MeshField_DrawTile(world, g_WhiteTexID, CELL_SIZE);
+        }
+        else if (o.KindId == KIND_MINIMAP_GOAL)
+        {
+            Shader3d_SetColor({ 0.0f, 0.0f, 0.7f, 1.0f });
+            const XMMATRIX world = XMMatrixTranslation(o.Position.x, o.Position.y + 1, o.Position.z);
+            MeshField_DrawTile(world, g_WhiteTexID, CELL_SIZE);
+        }
+    }
+
+    Shader3d_SetColor({ 1.0f, 1.0f, 1.0f, 1.0f });
+}
+
 void Map_Light_Reset()
 {
 
