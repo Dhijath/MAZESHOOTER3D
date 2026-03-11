@@ -46,10 +46,12 @@ void Shader3d_SetProjectMatrix(const DirectX::XMMATRIX& matrix);
 // ピクセルシェーダで使う色（float4）を設定
 void Shader3d_SetColor(const DirectX::XMFLOAT4& color);
 
+// トゥーンシェーディング設定（有効/無効、階調数、暗部の最小明るさ）
+void Shader3d_SetToonShading(bool enable, float shadeSteps = 3.0f, float minBrightness = 0.25f);
+
 // 描画開始前に呼んで、シェーダーや定数バッファをパイプラインにセット
 void Shader3d_Begin();
 
 
 
 #endif
-

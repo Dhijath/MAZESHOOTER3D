@@ -20,13 +20,23 @@ using namespace DirectX;
 
 namespace
 {
+    struct ToonShadingParam
+    {
+        int enable;
+        float shadeSteps;
+        float minBrightness;
+        float padding;
+    };
+
     ID3D11VertexShader* g_pVertexShader = nullptr;
     ID3D11InputLayout* g_pInputLayout = nullptr;
     ID3D11Buffer* g_pVSConstantBuffer0 = nullptr;
     ID3D11Buffer* g_pVSConstantBuffer1 = nullptr;
     ID3D11Buffer* g_pVSConstantBuffer2 = nullptr;
     ID3D11Buffer* g_pPSConstantBuffer0 = nullptr;
+    ID3D11Buffer* g_pPSConstantBuffer5 = nullptr;
     ID3D11PixelShader* g_pPixelShader = nullptr;
+    ToonShadingParam g_toonShading = { 0, 3.0f, 0.25f, 0.0f };
 
     // 注意：ここは初期化時に外部から渡されるので、Release は不要
     ID3D11Device* g_pDevice = nullptr;
@@ -135,6 +145,11 @@ bool Shader3d_Initialize(ID3D11Device* pDevice, ID3D11DeviceContext* pContext)
     buffer_desc.ByteWidth = sizeof(XMFLOAT4); // float4 1個分のサイズ
     g_pDevice->CreateBuffer(&buffer_desc, nullptr, &g_pPSConstantBuffer0);
 
+    // ピクセルシェーダ用 定数バッファ（トゥーン設定）作成
+    buffer_desc.ByteWidth = sizeof(ToonShadingParam);
+    g_pDevice->CreateBuffer(&buffer_desc, nullptr, &g_pPSConstantBuffer5);
+    g_pContext->UpdateSubresource(g_pPSConstantBuffer5, 0, nullptr, &g_toonShading, 0, 0);
+
     return true;
 }
 
@@ -145,6 +160,7 @@ void Shader3d_Finalize()
     SAFE_RELEASE(g_pVSConstantBuffer1);
     SAFE_RELEASE(g_pVSConstantBuffer2);
     SAFE_RELEASE(g_pPSConstantBuffer0);
+    SAFE_RELEASE(g_pPSConstantBuffer5);
     SAFE_RELEASE(g_pInputLayout);
     SAFE_RELEASE(g_pVertexShader);
 }
@@ -191,6 +207,16 @@ void Shader3d_SetColor(const XMFLOAT4& color)
     g_pContext->UpdateSubresource(g_pPSConstantBuffer0, 0, nullptr, &color, 0, 0);
 }
 
+void Shader3d_SetToonShading(bool enable, float shadeSteps, float minBrightness)
+{
+    g_toonShading.enable = enable ? 1 : 0;
+    g_toonShading.shadeSteps = (shadeSteps < 1.0f) ? 1.0f : shadeSteps;
+    g_toonShading.minBrightness = (minBrightness < 0.0f) ? 0.0f : ((minBrightness > 1.0f) ? 1.0f : minBrightness);
+    g_toonShading.padding = 0.0f;
+
+    g_pContext->UpdateSubresource(g_pPSConstantBuffer5, 0, nullptr, &g_toonShading, 0, 0);
+}
+
 void Shader3d_Begin()
 {
     // 頂点シェーダーとピクセルシェーダーを描画パイプラインにセット
@@ -207,6 +233,7 @@ void Shader3d_Begin()
 
     // PS 用定数バッファをバインド（色）
     g_pContext->PSSetConstantBuffers(0, 1, &g_pPSConstantBuffer0);
+    g_pContext->PSSetConstantBuffers(5, 1, &g_pPSConstantBuffer5);
 
     // サンプラーステートを設定したい時はここで PSSetSamplers する
     // g_pContext->PSSetSamplers(0, 1, &g_pSamplerState);
