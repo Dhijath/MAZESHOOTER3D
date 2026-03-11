@@ -71,6 +71,11 @@ void Fade_Draw()
     if (g_State == FADE_STATE_FINISHED_IN) return;
     if (g_FadeTexID < 0) return;  // テクスチャ未ロード時は描画しない
 
+    // 深度テストを無効化してから描画（前段の処理で深度が戻っていても確実に最前面に出す）
+    Direct3D_SetDepthEnable(false);
+    // 2D正射影を確実にセット（フェードは常に最前面に描画する）
+    Sprite_Begin();
+
     XMFLOAT4 color{ g_Color.x, g_Color.y, g_Color.z, g_Alpha };
     Sprite_Draw(
         g_FadeTexID,

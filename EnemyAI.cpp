@@ -26,14 +26,16 @@ namespace
 }
 
 //==============================================================================
-// AI更新処理（追跡 + 巡回）
+// AI更新処理（追跡 + 索敵 + 巡回）
 //==============================================================================
 void EnemyAI_Update(
     DirectX::XMFLOAT3* ioPosition,
     DirectX::XMFLOAT3* ioVelocity,
     DirectX::XMFLOAT3* ioFront,
     DirectX::XMFLOAT3* ioDestination,
-    bool* ioWasChasing,
+    bool*              ioWasChasing,
+    DirectX::XMFLOAT3* ioLastSeenPos,
+    float*             ioInvestigateTimer,
     float              dt,
     float              chaseSpeed,
     float              patrolSpeed,
@@ -72,39 +74,81 @@ void EnemyAI_Update(
         //======================================================================
         // 追跡モード：プレイヤーを追う
         //======================================================================
-        *ioWasChasing = true;
-        vTargetDir    = XMVector3Normalize(vToPlayerXZ);
-        moveSpeed     = chaseSpeed; // 引数で受け取った速度を使用する
+        *ioWasChasing       = true;
+        *ioLastSeenPos      = playerPos;   // 最終視認位置を更新
+        *ioInvestigateTimer = 0.0f;        // 索敵タイマーをリセット
+
+        // 壁迂回：LoS があっても直線が壁で塞がれている場合は近傍ウェイポイントを使う
+        XMFLOAT3 intermediateDest;
+        if (!MapPatrolAI_HasLineOfSight(*ioPosition, playerPos))
+        {
+            // プレイヤー付近の見通せる地点を中間目標にする（壁の角を迂回）
+            intermediateDest = MapPatrolAI_GetNearbyDestination(playerPos, 4.0f);
+            XMVECTOR vInterXZ = XMVectorSetY(XMLoadFloat3(&intermediateDest) - vEnemyPos, 0.0f);
+            vTargetDir = XMVector3Normalize(vInterXZ);
+        }
+        else
+        {
+            vTargetDir = XMVector3Normalize(vToPlayerXZ);
+        }
+        moveSpeed = chaseSpeed;
     }
     else
     {
         //======================================================================
-        // 巡回モード：目的地へ向かう
+        // 視野外：索敵（Investigate）または巡回（Patrol）
         //======================================================================
 
-        // 追跡から巡回に切り替わる瞬間に目的地を取得する
         if (*ioWasChasing)
         {
-            *ioDestination = MapPatrolAI_GetReachableDestination(*ioPosition);
-            *ioWasChasing  = false;
+            // 追跡→索敵へ切り替え：最終視認位置を目的地にセット
+            *ioDestination       = *ioLastSeenPos;
+            *ioInvestigateTimer  = 3.0f;
+            *ioWasChasing        = false;
         }
 
-        // エネミー→目的地のベクトル
-        XMVECTOR vDest     = XMLoadFloat3(ioDestination);
-        XMVECTOR vToDestXZ = XMVectorSetY(vDest - vEnemyPos, 0.0f);
-        float    distToDest = sqrtf(XMVectorGetX(XMVector3LengthSq(vToDestXZ)));
-
-        // 目的地到達チェック
-        if (distToDest < g_ArrivalDistance)
+        if (*ioInvestigateTimer > 0.0f)
         {
-            // 新しい目的地をランダム取得する
-            *ioDestination = MapPatrolAI_GetReachableDestination(*ioPosition);
-            vDest          = XMLoadFloat3(ioDestination);
-            vToDestXZ      = XMVectorSetY(vDest - vEnemyPos, 0.0f);
-        }
+            //==================================================================
+            // 索敵モード：最終視認位置へ急行
+            //==================================================================
+            *ioInvestigateTimer -= dt;
 
-        vTargetDir = XMVector3Normalize(vToDestXZ);
-        moveSpeed  = patrolSpeed; // 引数で受け取った速度を使用する
+            XMVECTOR vDest      = XMLoadFloat3(ioDestination);
+            XMVECTOR vToDestXZ  = XMVectorSetY(vDest - vEnemyPos, 0.0f);
+            float    distToDest = sqrtf(XMVectorGetX(XMVector3LengthSq(vToDestXZ)));
+
+            if (distToDest < g_ArrivalDistance || *ioInvestigateTimer <= 0.0f)
+            {
+                // 到着またはタイムアウト → 巡回へ移行
+                *ioInvestigateTimer = 0.0f;
+                *ioDestination      = MapPatrolAI_GetReachableDestination(*ioPosition);
+                vDest               = XMLoadFloat3(ioDestination);
+                vToDestXZ           = XMVectorSetY(vDest - vEnemyPos, 0.0f);
+            }
+
+            vTargetDir = XMVector3Normalize(vToDestXZ);
+            moveSpeed  = chaseSpeed; // 索敵中も追跡速度で移動
+        }
+        else
+        {
+            //==================================================================
+            // 巡回モード：目的地へ向かう
+            //==================================================================
+            XMVECTOR vDest      = XMLoadFloat3(ioDestination);
+            XMVECTOR vToDestXZ  = XMVectorSetY(vDest - vEnemyPos, 0.0f);
+            float    distToDest = sqrtf(XMVectorGetX(XMVector3LengthSq(vToDestXZ)));
+
+            if (distToDest < g_ArrivalDistance)
+            {
+                *ioDestination = MapPatrolAI_GetReachableDestination(*ioPosition);
+                vDest          = XMLoadFloat3(ioDestination);
+                vToDestXZ      = XMVectorSetY(vDest - vEnemyPos, 0.0f);
+            }
+
+            vTargetDir = XMVector3Normalize(vToDestXZ);
+            moveSpeed  = patrolSpeed;
+        }
     }
 
     //==========================================================================

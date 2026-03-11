@@ -29,5 +29,8 @@ bool Game_IsBossAlive();
 // ボス部屋モードを設定（true のときのみ Game_RespawnEnemies でボスをスポーンする）
 void Game_SetBossRoomMode(bool isBossRoom);
 
+// ボスの向き（正面ベクトル）をセット（BossIntro_Start から呼ぶ）
+void Game_SetBossLookDir(const DirectX::XMFLOAT3& dir);
+
 #endif // !GAME_H
 

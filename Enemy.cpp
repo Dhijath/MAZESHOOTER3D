@@ -22,6 +22,7 @@
 #include "Audio.h"
 #include "score.h"
 #include "ItemManager.h"
+#include "DamagePopup.h"
 
 using namespace DirectX;
 
@@ -93,26 +94,93 @@ void Enemy::Update(double elapsed_time)
     XMVECTOR pos = XMLoadFloat3(&m_Position);
     XMVECTOR vel = XMLoadFloat3(&m_Velocity);
 
-    // 　AI処理（追跡 + 巡回）
-    EnemyAI_Update(
-        &m_Position,
-        &m_Velocity,
-        &m_Front,
-        &m_Destination,
-        &m_WasChasing,
-        dt,
-        CHASE_SPD,   // 通常エネミーの追跡速度
-        PATROL_SPD,  // 通常エネミーの巡回速度
-        SIGHT_DIST); // 視野距離
+    // プレイヤーとの距離を先に計算（AI スキップ判定で使う）
+    XMFLOAT3 playerPosEarly  = Player_GetPosition();
+    XMVECTOR vPlayerPosEarly = XMLoadFloat3(&playerPosEarly);
+    float    distToPlayerXZ  = sqrtf(XMVectorGetX(
+                                   XMVector3LengthSq(
+                                       XMVectorSetY(vPlayerPosEarly - pos, 0.0f))));
+
+    // 　AI処理（追跡 + 索敵 + 巡回）
+    // 攻撃中 または 攻撃射程内（クールダウン中も含む）は AI の速度上書きをスキップ。
+    // 射程内で AI が押し続けると衝突の押し返しと競合して前後振動が発生するため。
+    if (!m_IsAttacking && distToPlayerXZ >= ATTACK_RANGE)
+    {
+        EnemyAI_Update(
+            &m_Position,
+            &m_Velocity,
+            &m_Front,
+            &m_Destination,
+            &m_WasChasing,
+            &m_LastSeenPos,
+            &m_InvestigateTimer,
+            dt,
+            CHASE_SPD,   // 通常エネミーの追跡速度
+            PATROL_SPD,  // 通常エネミーの巡回速度
+            SIGHT_DIST); // 視野距離
+    }
 
     // AI処理後の速度を再ロード
     vel = XMLoadFloat3(&m_Velocity);
 
+    //==========================================================================
+    // 攻撃モーション（溜め → ダッシュ）
+    //==========================================================================
+    {
+        XMFLOAT3 playerPosF  = Player_GetPosition();
+        XMVECTOR vPlayerPos  = XMLoadFloat3(&playerPosF);
+        XMVECTOR vToPlayerXZ = XMVectorSetY(vPlayerPos - pos, 0.0f);
+        float    distXZ      = sqrtf(XMVectorGetX(XMVector3LengthSq(vToPlayerXZ)));
+
+        // クールダウンカウントダウン（攻撃中は止める）
+        if (!m_IsAttacking && m_AttackCooldown > 0.0f)
+            m_AttackCooldown -= dt;
+
+        // 近距離でかつ攻撃していなければ溜め開始（クールダウン中は再発動しない）
+        if (!m_IsAttacking && m_AttackCooldown <= 0.0f && distXZ < ATTACK_RANGE)
+        {
+            m_IsAttacking = true;
+            m_AttackTimer = 0.0f;
+        }
+
+        if (m_IsAttacking)
+        {
+            m_AttackTimer += dt;
+
+            if (m_AttackTimer < ATTACK_WINDUP)
+            {
+                // 溜め中：XZ 速度を急減速（その場で止まる）
+                float brake = std::max(0.0f, 1.0f - 15.0f * dt);
+                vel = XMVectorSetX(vel, XMVectorGetX(vel) * brake);
+                vel = XMVectorSetZ(vel, XMVectorGetZ(vel) * brake);
+            }
+            else if (m_AttackTimer < ATTACK_WINDUP + 0.2f)
+            {
+                // ダッシュ：プレイヤー方向へ高速突進
+                if (XMVectorGetX(XMVector3LengthSq(vToPlayerXZ)) > 0.001f)
+                {
+                    XMVECTOR dir = XMVector3Normalize(vToPlayerXZ);
+                    vel = XMVectorSetX(vel, XMVectorGetX(dir) * ATTACK_DASH_SPD);
+                    vel = XMVectorSetZ(vel, XMVectorGetZ(dir) * ATTACK_DASH_SPD);
+                }
+            }
+            else
+            {
+                // 攻撃終了 → クールダウンセット
+                m_IsAttacking  = false;
+                m_AttackTimer  = 0.0f;
+                m_AttackCooldown = ATTACK_COOLDOWN;
+            }
+        }
+
+        XMStoreFloat3(&m_Velocity, vel);
+    }
+
     // 重力加算
     vel += XMVectorSet(0, -9.8f * GRAVITY_MUL * dt, 0, 0);
 
-    // 速度制限
-    vel = ClampXZSpeed(vel, MAX_SPEED);
+    // 速度制限（攻撃ダッシュ中は ATTACK_DASH_SPD まで許容）
+    vel = ClampXZSpeed(vel, m_IsAttacking ? ATTACK_DASH_SPD : MAX_SPEED);
 
     // 摩擦
     vel += -vel * (FRICTION * dt);
@@ -505,6 +573,14 @@ void Enemy::ResolveBulletHits()
         }
 
         Damage(bulletDamage);
+
+        // ダメージポップアップ（被弾位置にランダムオフセットで表示）
+        {
+            XMFLOAT3 popupPos = bulletOBB.center;
+            popupPos.x += (rand() % 41 - 20) * 0.01f;  // ±0.2f ランダムずれ
+            popupPos.z += (rand() % 41 - 20) * 0.01f;
+            DamagePopup_Add(popupPos, bulletDamage);
+        }
 
         if (IsDead())
         {

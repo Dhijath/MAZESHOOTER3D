@@ -25,22 +25,26 @@
 // ・目的地に到達で新しい目的地をランダム設定
 //
 // 引数
-// ・ioPosition    : エネミーの現在位置（入出力）
-// ・ioVelocity    : エネミーの現在速度（入出力・移動量）
-// ・ioFront       : エネミーの現在向き（入出力・回転）
-// ・ioDestination : 現在目的地（入出力・到達で自動更新）
-// ・ioWasChasing  : 前フレームの追跡フラグ（入出力）
-// ・dt            : 経過時間（秒）
-// ・chaseSpeed    : 追跡時の移動速度（メートル/秒）
-// ・patrolSpeed   : 巡回時の移動速度（メートル/秒）
-// ・sightDistance : 視野距離（メートル）
+// ・ioPosition          : エネミーの現在位置（入出力）
+// ・ioVelocity          : エネミーの現在速度（入出力・移動量）
+// ・ioFront             : エネミーの現在向き（入出力・回転）
+// ・ioDestination       : 現在目的地（入出力・到達で自動更新）
+// ・ioWasChasing        : 前フレームの追跡フラグ（入出力）
+// ・ioLastSeenPos       : 最後にプレイヤーを視認した位置（入出力）
+// ・ioInvestigateTimer  : 索敵残り時間（入出力・>0 で Investigate 状態）
+// ・dt                  : 経過時間（秒）
+// ・chaseSpeed          : 追跡時の移動速度（メートル/秒）
+// ・patrolSpeed         : 巡回時の移動速度（メートル/秒）
+// ・sightDistance       : 視野距離（メートル）
 //==============================================================================
 void EnemyAI_Update(
     DirectX::XMFLOAT3* ioPosition,
     DirectX::XMFLOAT3* ioVelocity,
     DirectX::XMFLOAT3* ioFront,
     DirectX::XMFLOAT3* ioDestination,
-    bool* ioWasChasing,
+    bool*              ioWasChasing,
+    DirectX::XMFLOAT3* ioLastSeenPos,
+    float*             ioInvestigateTimer,
     float              dt,
     float              chaseSpeed,
     float              patrolSpeed,

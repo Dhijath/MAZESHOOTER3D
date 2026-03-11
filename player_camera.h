@@ -65,6 +65,14 @@ bool Player_Camera_IsMouseLeftTrigger();
 bool Player_Camera_IsMouseLeftPressed();
 bool Player_Camera_IsMouseRightPressed();
 
+//==============================================================================
+// シネマティック上書き（ボス演出など）
+// ・指定した eye / target で View/Proj を作りすべてのシェーダへ適用する
+// ・g_Pos / g_View も更新するので GetPosition 等で取得可能
+//==============================================================================
+void Player_Camera_OverrideCinematic(
+    const DirectX::XMFLOAT3& eye,
+    const DirectX::XMFLOAT3& target);
 
 
 #endif // PLAYER_CAMERA_H

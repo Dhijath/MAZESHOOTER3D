@@ -35,4 +35,10 @@ void GameManager_Update(double elapsed_time);
 // 描画
 void GameManager_Draw();
 
+// ポーズ中か判定（外部参照用）
+bool GameManager_IsPaused();
+
+// 現在のゲームステートを取得（game_window など外部から参照する場合に使用）
+GameState GameManager_GetState();
+
 #endif // GAMEMANAGER_H

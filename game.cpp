@@ -47,6 +47,8 @@ using namespace DirectX;
 #include "ItemManager.h"
 #include "EnemyBullet.h"
 #include "EnemyManager.h"
+#include "DamagePopup.h"
+#include "BossIntro.h"
 
 
 
@@ -175,6 +177,9 @@ void Game_Initialize()
 
 
     ItemManager_Initialize();
+
+    // ダメージポップアップ初期化
+    DamagePopup_Initialize();
 }
 
 //==============================================================================
@@ -236,6 +241,15 @@ bool Game_IsBossAlive()
 void Game_SetBossRoomMode(bool isBossRoom)
 {
     g_IsBossRoom = isBossRoom;
+}
+
+//==============================================================================
+// ボスの向き（正面ベクトル）を直接セット
+// BossIntro_Start から呼ばれ、演出開始時にボスをプレイヤー方向へ向ける
+//==============================================================================
+void Game_SetBossLookDir(const XMFLOAT3& dir)
+{
+    if (g_pBossEnemy) g_pBossEnemy->SetFront(dir);
 }
 
 //==============================================================================
@@ -303,6 +317,15 @@ void Game_Update(double elapsed_time)
         elapsed_time = MAX_DT;
 
     //--------------------------------------------------------------------------
+    // ボス登場演出中はゲームロジックをスキップ（カメラ更新のみ）
+    //--------------------------------------------------------------------------
+    if (BossIntro_IsPlaying())
+    {
+        BossIntro_Update(elapsed_time);
+        return;
+    }
+
+    //--------------------------------------------------------------------------
     // ダンジョン再生成（Rキー）
     // ・マップを再生成して、プレイヤーを安全スポーン位置へ移動する
     //--------------------------------------------------------------------------
@@ -364,13 +387,22 @@ void Game_Update(double elapsed_time)
                 const float dist = XMVectorGetX(XMVector3Length(
                     XMLoadFloat3(&e.GetPosition()) - vCenter));
                 if (dist <= exp.radius)
+                {
                     e.Damage(exp.damage);
+                    // 爆発ダメージもポップアップ表示
+                    XMFLOAT3 popupPos = e.GetPosition();
+                    popupPos.y += 1.2f;
+                    DamagePopup_Add(popupPos, exp.damage);
+                }
             }
         }
         Bullet_ClearPendingExplosions();
     }
 
     ItemManager_Update();
+
+    // ダメージポップアップ更新
+    DamagePopup_Update(static_cast<float>(elapsed_time));
 
     // マップオブジェクトと弾の AABB 当たり判定
     for (int j = 0; j < Map_GetObjectsCount(); j++)
@@ -415,6 +447,9 @@ void Game_Draw()
     //    10.0f,
     //    { 0.4f, 0.4f, 0.4f, 1.0f }
     //);
+
+    // 3Dパス：前フレームの2Dパスで無効化した深度テスト+書き込みを有効化
+    Direct3D_SetDepthEnable(true);
 
     // ---------------------------------------------------------------------
     // サンプラー設定
@@ -499,7 +534,9 @@ void Game_Draw()
 
     Player_Draw();
 
-
+    // ゴールビルボード（半透明）はモデルを全部描いた後に描画
+    // → 透過部分越しにエネミー・プレイヤーが正しく見える
+    Map_DrawGoal();
 
     //==========================================================
     // デバッグ: AABBを可視化
@@ -527,9 +564,17 @@ void Game_Draw()
 
     //========================
     MiniMap_Render3D(); // オフスクリーンに3D描画
+
+    // 2Dパス開始：深度テスト無効化
+    // スプライトが z=0 を深度バッファに書き込むと後続スプライト（フェード等）が
+    // 深度テストで落ちて描画されなくなる問題を防ぐ
+    Direct3D_SetDepthEnable(false);
+
     MiniMap_Draw2D();   // 画面に貼る
     //HUD描画
     HUD_Draw();
+    // HUD_Draw が内部で SetDepthEnable(true) に戻すため、2Dパスのために再度無効化
+    Direct3D_SetDepthEnable(false);
 
     // ---- ロックオンサイト（2Dスプライト・スクリーン投影）----
     {
@@ -580,6 +625,9 @@ void Game_Draw()
             }
         }
     }
+
+    // ---- ダメージポップアップ描画（最前面）----
+    DamagePopup_Draw();
 }
 
 //==============================================================================
@@ -588,6 +636,7 @@ void Game_Draw()
 void Game_Finalize()
 {
 
+    DamagePopup_Finalize();
     ItemManager_Finalize();
     HUD_Finalize();
 

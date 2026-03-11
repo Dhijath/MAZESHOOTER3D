@@ -7,6 +7,9 @@ void BulletHitEffect_Initialize();
 // 弾ヒットエフェクト全体の終了処理（残りエフェクト解放）
 void BulletHitEffect_Finalize();
 
+// アセット解放なしで全エフェクトをクリア（ルーム遷移時用）
+void BulletHitEffect_ClearAll();
+
 // 全ヒットエフェクトの更新（再生状態のチェックなど）
 void BulletHitEffect_Update();
 

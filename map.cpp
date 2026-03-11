@@ -130,7 +130,7 @@ namespace
     constexpr float CELL_SIZE = 1.0f;  // 1タイル=1m
     constexpr float FLOOR_Y = 0.5f;  // 床中心（底面がY=0）
 
-    constexpr float WALL_HEIGHT = 3.0f;
+    constexpr float WALL_HEIGHT = 5.0f;
 
     // 天井の中心Y（壁の上に1枚）
     // 天井は1m厚のCubeを1枚置く想定なので +0.5＜現在メッシュフィールドへの以降に成功し削除
@@ -509,7 +509,7 @@ void Map_GenerateDungeon(std::uint32_t seed)
     //==============================
     // マップ全体サイズ（奇数推奨）
     //==============================
-    const int dungeonWidth = 79;
+    const int dungeonWidth =  79;
     const int dungeonHeight = 79;
 
     //==============================
@@ -526,8 +526,8 @@ void Map_GenerateDungeon(std::uint32_t seed)
     //==============================
     // 部屋サイズ（奇数推奨）
     //==============================
-    const int roomMinSize = 5;
-    const int roomMaxSize = 7;
+    const int roomMinSize = 73;
+    const int roomMaxSize = 73;
 
 
     //==============================
@@ -1457,49 +1457,58 @@ void Map_Draw()
     // map.cpp の Map_Draw() 内、ゴール描画の直前に追加
 
     //--------------------------------------------------------------------------
-    // ゴール表示（ビルボード）
-    //--------------------------------------------------------------------------
-    {
-        // 既存のブレンドステートを取得（退避）
-        ID3D11BlendState* oldBlendState = nullptr;
-        FLOAT oldBlendFactor[4];
-        UINT oldSampleMask;
-        ctx->OMGetBlendState(&oldBlendState, oldBlendFactor, &oldSampleMask);
-
-        // アルファブレンドを設定
-        D3D11_BLEND_DESC blendDesc = {};
-        blendDesc.AlphaToCoverageEnable = FALSE;
-        blendDesc.IndependentBlendEnable = FALSE;
-        blendDesc.RenderTarget[0].BlendEnable = TRUE;
-        blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
-        blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-        blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-        blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-        blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
-        blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-        blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-
-        ID3D11BlendState* alphaBlend = nullptr;
-        Direct3D_GetDevice()->CreateBlendState(&blendDesc, &alphaBlend);
-        ctx->OMSetBlendState(alphaBlend, nullptr, 0xFFFFFFFF);
-
-        // ビルボード描画
-        const XMFLOAT2 scale = { 1.0f, 1.5f };
-        const XMFLOAT2 pivot = { 0.5f, 0.0f };
-        Billboard_Draw(g_GoalTexID, g_GoalPos, scale, pivot);
-
-        // ブレンドステートを元に戻す
-        ctx->OMSetBlendState(oldBlendState, oldBlendFactor, oldSampleMask);
-        SAFE_RELEASE(alphaBlend);
-        SAFE_RELEASE(oldBlendState);
-    }
-
-
-
-    //--------------------------------------------------------------------------
     // 状態復帰（Wall側がPS定数を上書きする場合の保険）
     //--------------------------------------------------------------------------
     Map_Light_Reset();
+}
+
+//==============================================================================
+// ゴールビルボード描画（モデル類の描画後に呼ぶこと）
+//
+// ■なぜ Map_Draw() から分離するか
+//   ゴールは半透明ビルボード。Map_Draw() 内で先に描くと透明ピクセルが深度バッファに
+//   書き込まれ、後から描くエネミー・プレイヤーがその画素で深度テストに落ちて
+//   「透過越しにモデルが映らない」問題が起きる。
+//   → 全不透明モデルを描いた後に呼ぶことで正しく透過合成される。
+//==============================================================================
+void Map_DrawGoal()
+{
+    if (g_GoalTexID < 0) return;
+
+    ID3D11DeviceContext* ctx = Direct3D_GetContext();
+
+    // 既存のブレンドステートを退避
+    ID3D11BlendState* oldBlendState = nullptr;
+    FLOAT oldBlendFactor[4];
+    UINT oldSampleMask;
+    ctx->OMGetBlendState(&oldBlendState, oldBlendFactor, &oldSampleMask);
+
+    // アルファブレンドを設定
+    D3D11_BLEND_DESC blendDesc = {};
+    blendDesc.AlphaToCoverageEnable = FALSE;
+    blendDesc.IndependentBlendEnable = FALSE;
+    blendDesc.RenderTarget[0].BlendEnable = TRUE;
+    blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+    blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+    blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+    blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+    blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+    blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+    blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+
+    ID3D11BlendState* alphaBlend = nullptr;
+    Direct3D_GetDevice()->CreateBlendState(&blendDesc, &alphaBlend);
+    ctx->OMSetBlendState(alphaBlend, nullptr, 0xFFFFFFFF);
+
+    // ビルボード描画（モデル後なので透過部分に正しくモデルが映る）
+    const XMFLOAT2 scale = { 1.0f, 1.5f };
+    const XMFLOAT2 pivot = { 0.5f, 0.0f };
+    Billboard_Draw(g_GoalTexID, g_GoalPos, scale, pivot);
+
+    // ブレンドステートを元に戻す
+    ctx->OMSetBlendState(oldBlendState, oldBlendFactor, oldSampleMask);
+    SAFE_RELEASE(alphaBlend);
+    SAFE_RELEASE(oldBlendState);
 }
 
 //==============================================================================
@@ -1579,8 +1588,8 @@ void Map_GenerateBossRoom(std::uint32_t /*seed*/)
     //==============================
     // マップサイズ（単一アリーナ）
     //==============================
-    const int mapW = 21;
-    const int mapH = 21;
+    const int mapW = 29;
+    const int mapH = 29;
     const float originX = 0.5f;
     const float originZ = 0.5f;
 

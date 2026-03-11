@@ -231,7 +231,7 @@ bool ShaderToon_Initialize(ID3D11Device* pDevice, ID3D11DeviceContext* pContext)
     // デフォルト値をセット
     //--------------------------------------------------------------------------
     ShaderToon_SetToonParam(3, 0.8f, 5.0f, 0.4f);
-    ShaderToon_SetOutlineWidth(0.003f);
+    ShaderToon_SetOutlineWidth(0.002f);
     ShaderToon_SetOutlineColor({ 0.0f, 0.0f, 0.0f, 1.0f });
 
     return true;

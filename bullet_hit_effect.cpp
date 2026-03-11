@@ -118,6 +118,17 @@ void BulletHitEffect_Finalize()
     g_EffectCount = 0;
 }
 
+// アセット解放なしで全エフェクトをクリア（ルーム遷移時用）
+void BulletHitEffect_ClearAll()
+{
+    for (int i = 0; i < g_EffectCount; i++)
+    {
+        delete g_pEffects[i];
+        g_pEffects[i] = nullptr;
+    }
+    g_EffectCount = 0;
+}
+
 // 全エフェクトの更新
 void BulletHitEffect_Update()
 {

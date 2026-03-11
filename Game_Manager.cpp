@@ -21,6 +21,10 @@
 #include "fade.h"
 #include "Audio.h"
 #include "key_logger.h"
+#include "bullet.h"
+#include "EnemyBullet.h"
+#include "bullet_hit_effect.h"
+#include "effect.h"
 #include "Clear.h"
 #include "Result.h"
 #include "WeaponSelect.h"
@@ -28,6 +32,8 @@
 #include "map.h"
 #include <cstdint>
 #include "pad_logger.h"
+#include "Pause.h"
+#include "BossIntro.h"
 
 // 現在/次の状態
 static GameState g_GameState = GameState::Title;
@@ -48,6 +54,8 @@ static double g_GoalCooldown = 0.0;
 static bool g_PendingDungeonRegenerate = false;
 // ボス部屋フェーズ中フラグ（2回ゴール到達後に true になる）
 static bool g_InBossRoom = false;
+// ポーズ中フラグ（フェードなし即時停止）
+static bool g_IsPaused = false;
 
 // BGMパス（必要に応じて差し替え）
 static const char* BGM_TITLE = "resource/sound/newspaper.wav";
@@ -107,6 +115,8 @@ void GameManager_Initialize()
     Fade_Start(1.0, /*isFadeOut=*/false, { 1,1,1 }); // 起動フェードイン
     g_PlayerWarpSE = LoadAudioWithVolume("resource/sound/warp.wav", 0.5f);
     g_PlayerclearSE = LoadAudioWithVolume("resource/sound/clear.wav", 0.5f);
+    g_IsPaused = false;
+    Pause_Initialize();
 }
 
 //------------------------------------------------------------------------------
@@ -195,6 +205,39 @@ void GameManager_Update(double elapsed_time)
     {
         if (g_IsTransitioning) break;
 
+        //----------------------------------------------------------
+        // ポーズトグル（ESC / PAD_START）
+        // ボス演出中・遷移中はポーズ不可
+        //----------------------------------------------------------
+        if (!BossIntro_IsPlaying())
+        {
+            const bool pauseKey = KeyLogger_IsTrigger(KK_ESCAPE)
+                                || PadLogger_IsTrigger(PAD_START);
+            if (pauseKey)
+                g_IsPaused = !g_IsPaused;
+        }
+
+        //----------------------------------------------------------
+        // ポーズ中
+        //----------------------------------------------------------
+        if (g_IsPaused)
+        {
+            PauseResult pr = Pause_Update();
+            if (pr == PauseResult::Resume)
+            {
+                g_IsPaused = false;
+            }
+            else if (pr == PauseResult::GoTitle)
+            {
+                g_IsPaused = false;
+                BeginTransition(GameState::Title, BGM_TITLE);
+            }
+            break; // ポーズ中はゲーム更新をスキップ
+        }
+
+        //----------------------------------------------------------
+        // 通常更新
+        //----------------------------------------------------------
         Game_Update(elapsed_time);
 
         if (g_GoalCooldown > 0.0)
@@ -202,15 +245,17 @@ void GameManager_Update(double elapsed_time)
             g_GoalCooldown -= elapsed_time;
         }
 
-        // ゲームオーバー：フェードアウト後にリザルトへ遷移
-        if (!Player_IsEnable())
+        // ゲームオーバー：プレイヤー無効化かつ演出中でないとき
+        if (!Player_IsEnable() && !BossIntro_IsPlaying())
         {
             BeginTransition(GameState::Result, BGM_RESULT);
             break;
         }
 
-        // ゴール到達判定（ボス部屋フェーズ中・クールダウン中はスキップ）
-        if (!g_InBossRoom && g_GoalCooldown <= 0.0 && Map_IsPlayerReachedGoal())
+        // ゴール到達判定（ボス部屋フェーズ中・クールダウン中・演出中はスキップ）
+        if (!g_InBossRoom && g_GoalCooldown <= 0.0
+            && !BossIntro_IsPlaying()
+            && Map_IsPlayerReachedGoal())
         {
             Map_AddGoalReachCount();
 
@@ -226,8 +271,8 @@ void GameManager_Update(double elapsed_time)
             PlayAudio(g_PlayerWarpSE);
         }
 
-        // ボス部屋フェーズ中にボスを倒したらクリア
-        if (g_InBossRoom && !Game_IsBossAlive())
+        // ボス部屋フェーズ中にボスを倒したらクリア（演出終了後のみチェック）
+        if (g_InBossRoom && !BossIntro_IsPlaying() && !Game_IsBossAlive())
         {
             PlayAudio(g_PlayerclearSE);
             BeginTransition(GameState::Clear, BGM_RESULT);
@@ -304,8 +349,19 @@ void GameManager_Update(double elapsed_time)
             Map_RegisterFloors();
             Player_SetPosition(Map_GetSpawnPosition(), true);
             Game_RespawnEnemies();
+            Bullet_ClearAll();             // ルーム遷移時に残弾・エフェクト・パーティクルをクリア
+            EnemyBullet_ClearAll();
+            BulletHitEffect_ClearAll();
+            Effect_ClearAll();
+            Player_ClearParticles();
 
             g_GoalCooldown = 1.0;
+
+            // ボス部屋フェーズ：フェードイン後に登場演出を開始
+            if (g_InBossRoom)
+            {
+                BossIntro_Start(Map_GetBossSpawnPosition());
+            }
 
             // 再生成完了後にフェードイン
             Fade_StartIn(0.5, { 0.0f, 0.0f, 0.0f });
@@ -358,7 +414,12 @@ void GameManager_Draw()
     {
     case GameState::Title:        Title_Draw();         break;
     case GameState::WeaponSelect: WeaponSelect_Draw();  break;
-    case GameState::Playing:      Game_Draw();          break;
+    case GameState::Playing:
+        Game_Draw();
+        // ポーズ中はゲーム画面の上にメニューを重ねる
+        if (g_IsPaused)
+            Pause_Draw();
+        break;
     case GameState::Option:  Option_Draw();  break;
     case GameState::Result:  Result_Draw();  break;
     case GameState::Clear:   Clear_Draw();   break;
@@ -367,4 +428,17 @@ void GameManager_Draw()
 
     // フェードは最後に重ねる
     Fade_Draw();
+}
+
+//------------------------------------------------------------------------------
+// ポーズ中フラグ取得
+//------------------------------------------------------------------------------
+bool GameManager_IsPaused()
+{
+    return g_IsPaused;
+}
+
+GameState GameManager_GetState()
+{
+    return g_GameState;
 }

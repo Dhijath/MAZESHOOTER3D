@@ -26,9 +26,13 @@ public:
     static constexpr float ENEMY_HALF_WIDTH_X = 0.25f;
     static constexpr float ENEMY_HALF_WIDTH_Z = 0.25f;
 
-    static constexpr float SIGHT_DIST  = 5.0f;
-    static constexpr float CHASE_SPD   = 2.0f;
-    static constexpr float PATROL_SPD  = 1.0f;
+    static constexpr float SIGHT_DIST   = 10.0f;   // 視野距離（5m→10m に拡大）
+    static constexpr float CHASE_SPD    = 3.2f;    // 追跡速度（2→3.2 m/s に強化）
+    static constexpr float PATROL_SPD   = 1.0f;
+    static constexpr float ATTACK_RANGE    = 1.5f;  // 攻撃を開始する距離
+    static constexpr float ATTACK_WINDUP  = 0.4f;  // 溜め時間（秒）
+    static constexpr float ATTACK_DASH_SPD = 8.0f; // 攻撃ダッシュ速度
+    static constexpr float ATTACK_COOLDOWN = 2.0f; // 攻撃後の再発動待機時間（秒）
     static constexpr float MAX_SPEED   = 5.0f;
     static constexpr float GRAVITY_MUL = 3.0f;
     static constexpr float FRICTION = 4.0f;
@@ -147,6 +151,12 @@ public:
     //==========================================================================
     bool IsAlive() const { return m_IsAlive; }
 
+    //==========================================================================
+    // 向き（正面ベクトル）を直接セット
+    // BossIntro など外部から初期方向を指定する場合に使用
+    //==========================================================================
+    void SetFront(const DirectX::XMFLOAT3& front) { m_Front = front; }
+
 protected:
     //==========================================================================
     // 任意の位置からエネミー用OBBを作成
@@ -227,6 +237,15 @@ protected:
     bool m_IsAlive = false;            // 生存フラグ
     mutable bool m_IsGround = false;   // 接地フラグ
     bool m_WasChasing = false;         // 前フレームの追跡フラグ
+
+    // 記憶・索敵
+    DirectX::XMFLOAT3 m_LastSeenPos   {};   // プレイヤーを最後に視認した位置
+    float             m_InvestigateTimer = 0.0f; // 索敵残り時間（>0 で Investigate 状態）
+
+    // 攻撃モーション
+    float m_AttackTimer    = 0.0f;  // 溜め経過時間
+    float m_AttackCooldown = 0.0f;  // 攻撃後の再発動ウェイト
+    bool  m_IsAttacking    = false; // 攻撃溜め中フラグ
 };
 
 void Enemy_LoadSE();

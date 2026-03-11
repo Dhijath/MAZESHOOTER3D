@@ -154,6 +154,7 @@
     <ClCompile Include="Audio.cpp" />
     <ClCompile Include="billboard.cpp" />
     <ClCompile Include="blob_shadow.cpp" />
+    <ClCompile Include="BossIntro.cpp" />
     <ClCompile Include="bullet.cpp" />
     <ClCompile Include="bullet_hit_effect.cpp" />
     <ClCompile Include="camera.cpp" />
@@ -162,6 +163,7 @@
     <ClCompile Include="collision_knockback.cpp" />
     <ClCompile Include="collision_obb.cpp" />
     <ClCompile Include="cube.cpp" />
+    <ClCompile Include="DamagePopup.cpp" />
     <ClCompile Include="debug_ostream.cpp" />
     <ClCompile Include="debug_text.cpp" />
     <ClCompile Include="direct3d.cpp" />
@@ -199,6 +201,7 @@
     <ClCompile Include="pad_logger.cpp" />
     <ClCompile Include="particle_test.cpp" />
     <ClCompile Include="particle_thruster.cpp" />
+    <ClCompile Include="Pause.cpp" />
     <ClCompile Include="player.cpp" />
     <ClCompile Include="PlayerWeapon.cpp" />
     <ClCompile Include="player_camera.cpp" />
@@ -233,15 +236,18 @@
     <ClInclude Include="Audio.h" />
     <ClInclude Include="billboard.h" />
     <ClInclude Include="blob_shadow.h" />
+    <ClInclude Include="BossIntro.h" />
     <ClInclude Include="bullet_hit_effect.h" />
     <ClInclude Include="camera.h" />
     <ClInclude Include="Clear.h" />
     <ClInclude Include="collision.h" />
     <ClInclude Include="collision_knockback.h" />
     <ClInclude Include="collision_obb.h" />
+    <ClInclude Include="DamagePopup.h" />
     <ClInclude Include="debug_ostream.h" />
     <ClInclude Include="debug_text.h" />
     <ClInclude Include="direct3d.h" />
+    <ClInclude Include="Easing.h" />
     <ClInclude Include="effect.h" />
     <ClInclude Include="Enemy.h" />
     <ClInclude Include="EnemyAI.h" />
@@ -278,6 +284,7 @@
     <ClInclude Include="Particle.h" />
     <ClInclude Include="particle_test.h" />
     <ClInclude Include="particle_thruster.h" />
+    <ClInclude Include="Pause.h" />
     <ClInclude Include="PlayerWeapon.h" />
     <ClInclude Include="player_camera.h" />
     <ClInclude Include="Player_topcamera.h" />

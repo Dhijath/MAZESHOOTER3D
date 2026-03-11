@@ -69,7 +69,9 @@ void EnemyTank::Update(double elapsed_time)
     EnemyAI_Update(
         &m_Position, &m_Velocity,
         &m_Front, &m_Destination,
-        &m_WasChasing, dt,
+        &m_WasChasing,
+        &m_LastSeenPos, &m_InvestigateTimer,
+        dt,
         CHASE_SPD,   // タンクの追跡速度
         PATROL_SPD,  // タンクの巡回速度
         SIGHT_DIST); // 視野距離

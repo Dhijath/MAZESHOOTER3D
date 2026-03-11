@@ -1,4 +1,4 @@
-﻿/*==============================================================================
+/*==============================================================================
 
    ゲームウィンドウ生成とWndProc [game_window.cpp]
                                                          Author : 51106
@@ -17,6 +17,7 @@
 
 #include "keyboard.h"
 #include "mouse.h"
+#include "Game_Manager.h"
 
 
 
@@ -35,7 +36,7 @@ bool g_ExitDialogJustClosed = false;
 HWND GameWindow_Create(HINSTANCE hInstance)
 {
     WNDCLASSEXW wcex{};
-    wcex.cbSize = sizeof(WNDCLASSEX);
+    wcex.cbSize = sizeof(WNDCLASSEXW);
     wcex.lpfnWndProc = WndProc;
     wcex.hInstance = hInstance;
     wcex.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
@@ -94,8 +95,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_KEYDOWN:
         if (wParam == VK_ESCAPE)
         {
-            g_IsExitDialogOpen = true;
-            SendMessage(hWnd, WM_CLOSE, 0, 0);
+            // Playing 中は ESC をポーズシステムに委譲する（window 側では何もしない）
+            if (GameManager_GetState() != GameState::Playing)
+            {
+                g_IsExitDialogOpen = true;
+                SendMessage(hWnd, WM_CLOSE, 0, 0);
+            }
             return 0;
         }
         break;
@@ -128,5 +133,5 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         break;
     }
 
-    return DefWindowProc(hWnd, message, wParam, lParam);
+    return DefWindowProcW(hWnd, message, wParam, lParam);
 }

@@ -40,6 +40,17 @@ void Effect_Finalize()
 	UnloadAudio(g_EffectSoundID);
 }
 
+// アセット解放なしで全エフェクトをクリア（ルーム遷移時用）
+void Effect_ClearAll()
+{
+	for (Effect& e : g_Effect)
+	{
+		if (!e.isEnable) continue;
+		SpriteAnim_DestroyPlayer(e.sprite_anim_id);
+		e.isEnable = false;
+	}
+}
+
 void Effect_Update(double elapsed_time)
 {
 	for (Effect& e : g_Effect)

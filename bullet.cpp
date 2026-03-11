@@ -481,6 +481,20 @@ void BulletManager::Finalize()
 }
 
 //==============================================================================
+// 全弾クリア（アセット解放なし・ルーム遷移時用）
+//==============================================================================
+void BulletManager::ClearAll()
+{
+    for (int i = 0; i < m_count; i++)
+    {
+        delete m_bullets[i];
+        m_bullets[i] = nullptr;
+    }
+    m_count = 0;
+    m_explosionCount = 0;
+}
+
+//==============================================================================
 // 全弾の更新
 //
 // ■役割
@@ -781,6 +795,11 @@ void Bullet_Initialize()
 void Bullet_Finalize()
 {
     GetManager().Finalize();
+}
+
+void Bullet_ClearAll()
+{
+    GetManager().ClearAll();
 }
 
 void Bullet_Update(double elapsed_time)
