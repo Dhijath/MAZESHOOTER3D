@@ -213,6 +213,23 @@ void Mouse_ProcessMessage(UINT message, WPARAM wParam, LPARAM lParam)
         return;
     }
 
+    // 非アクティブ中はボタン・ホイール・移動を無視する
+    // （マウスメッセージはフォーカスが無くてもカーソル下のウィンドウへ届くため、
+    //   別ウィンドウ操作中のクリックを拾わないようにする）
+    if (!gInFocus)
+    {
+        switch (message)
+        {
+        case WM_MOUSEMOVE:
+        case WM_LBUTTONDOWN: case WM_LBUTTONUP:
+        case WM_RBUTTONDOWN: case WM_RBUTTONUP:
+        case WM_MBUTTONDOWN: case WM_MBUTTONUP:
+        case WM_XBUTTONDOWN: case WM_XBUTTONUP:
+        case WM_MOUSEWHEEL:
+            return;
+        }
+    }
+
     switch (message)
     {
     case WM_ACTIVATEAPP:

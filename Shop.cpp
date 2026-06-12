@@ -37,13 +37,31 @@ namespace
 
     static constexpr float INTERACT_DIST = 4.0f; // インタラクト可能距離
 
+    // DirectWrite 生成時の基準フォントサイズ。
+    // 実際の描画サイズは DrawTextFit が枠サイズ比から拡縮するため、
+    // この値自体はレイアウトに影響しない（DrawAt 内の縦中心計算の基準）。
+    static constexpr float BASE_FONT_SIZE = 32.0f;
+
     static DirectWrite* g_pDWTitle  = nullptr;
     static DirectWrite* g_pDWItem   = nullptr;
     static DirectWrite* g_pDWInfo   = nullptr;
 
-    static bool IsShopping()
+    // 仮想座標 (cx, cy) を中心に、仮想単位 fontSize の高さで文字列を描く。
+    // SetScale は座標とグリフを同率で拡縮するため、倍率 k を掛けた分だけ
+    // 座標を 1/k して渡すことで「位置はそのまま・文字だけ枠比サイズ」になる。
+    // cy はグリフの縦中心（DrawAt の top = cy - 0.75*fontSize を補正済み）。
+    static void DrawTextFit(DirectWrite* dw, const char* text,
+                            float cx, float cy, float halfW, float fontSize,
+                            const D2D1_COLOR_F& color,
+                            float scaleX, float scaleY)
     {
-        return WaveManager_GetPhase() == WavePhase::Shopping;
+        const float k = fontSize / BASE_FONT_SIZE;
+        const float cyTop = cy + fontSize * 0.25f; // DrawAt の縦アンカーを中心へ補正
+        dw->SetScale(scaleX * k, scaleY * k);
+        dw->BeginBatch();
+        dw->DrawAt(text, cx / k, cyTop / k, halfW / k, color);
+        dw->EndBatch();
+        dw->SetScale(1.0f, 1.0f);
     }
 
     static float DistToPlayer()
@@ -74,30 +92,33 @@ void Shop_Initialize(const XMFLOAT3& pos)
         static FontData fd;
         fd.font = Font::Arial; fd.fontWeight = DWRITE_FONT_WEIGHT_BOLD;
         fd.fontStyle = DWRITE_FONT_STYLE_NORMAL; fd.fontStretch = DWRITE_FONT_STRETCH_NORMAL;
-        fd.fontSize = 36.0f; fd.localeName = L"en-us";
+        fd.fontSize = BASE_FONT_SIZE; fd.localeName = L"en-us";
         fd.textAlignment = DWRITE_TEXT_ALIGNMENT_CENTER;
         fd.Color = D2D1::ColorF(1,1,1,1);
         g_pDWTitle = new DirectWrite(&fd); g_pDWTitle->Init();
+        g_pDWTitle->SetWordWrapping(false);
     }
     if (!g_pDWItem)
     {
         static FontData fd;
         fd.font = Font::Arial; fd.fontWeight = DWRITE_FONT_WEIGHT_NORMAL;
         fd.fontStyle = DWRITE_FONT_STYLE_NORMAL; fd.fontStretch = DWRITE_FONT_STRETCH_NORMAL;
-        fd.fontSize = 28.0f; fd.localeName = L"en-us";
+        fd.fontSize = BASE_FONT_SIZE; fd.localeName = L"en-us";
         fd.textAlignment = DWRITE_TEXT_ALIGNMENT_LEADING;
         fd.Color = D2D1::ColorF(1,1,1,1);
         g_pDWItem = new DirectWrite(&fd); g_pDWItem->Init();
+        g_pDWItem->SetWordWrapping(false);
     }
     if (!g_pDWInfo)
     {
         static FontData fd;
         fd.font = Font::Arial; fd.fontWeight = DWRITE_FONT_WEIGHT_NORMAL;
         fd.fontStyle = DWRITE_FONT_STYLE_NORMAL; fd.fontStretch = DWRITE_FONT_STRETCH_NORMAL;
-        fd.fontSize = 22.0f; fd.localeName = L"en-us";
+        fd.fontSize = BASE_FONT_SIZE; fd.localeName = L"en-us";
         fd.textAlignment = DWRITE_TEXT_ALIGNMENT_TRAILING;
         fd.Color = D2D1::ColorF(0.8f,0.8f,0.8f,1);
         g_pDWInfo = new DirectWrite(&fd); g_pDWInfo->Init();
+        g_pDWInfo->SetWordWrapping(false);
     }
 }
 
@@ -115,23 +136,24 @@ void Shop_Finalize()
 
 void Shop_Update(double)
 {
-    if (!IsShopping())
-    {
-        g_IsOpen = false;
-        return;
-    }
-
     const bool inRange = (DistToPlayer() <= INTERACT_DIST);
 
     if (!g_IsOpen)
     {
-        // 近くでEキー/Aボタン→開く
+        // 近くでEキー/Aボタン→開く（フェーズ問わずいつでも可）
         if (inRange && (KeyLogger_IsTrigger(KK_E) || PadLogger_IsTrigger(PAD_A)))
         {
             g_IsOpen = true;
             g_Cursor = 0;
             PlayAudio(g_SeOpen, false);
         }
+        return;
+    }
+
+    // ショップから離れたら自動で閉じる
+    if (!inRange)
+    {
+        g_IsOpen = false;
         return;
     }
 
@@ -198,16 +220,27 @@ void Shop_DrawUI()
     Sprite_Begin();
 
     // パネル（画面比率で管理）
-    const float PNL_W   = sw * 0.38f;
-    const float PNL_H   = sh * 0.70f;
+    const float PNL_W   = sw * 0.62f;
+    const float PNL_H   = sh * 0.80f;
     const float px      = sw * 0.5f - PNL_W * 0.5f;
     const float py      = sh * 0.5f - PNL_H * 0.5f;
     const float cx      = sw * 0.5f;
     const float ROW_H   = PNL_H / (WEAPON_COUNT + 1.5f);
     const float TITLE_H = ROW_H * 0.9f;
     const float LIST_Y  = py + TITLE_H + ROW_H * 0.3f;
-    const float LABEL_X = px + PNL_W * 0.12f;
-    const float PRICE_X = px + PNL_W * 0.88f;
+
+    // 文字サイズは行・タイトルの高さ比で決定（枠が変われば文字も追従する）
+    const float FONT_TITLE = TITLE_H * 0.60f;
+    const float FONT_ITEM  = ROW_H   * 0.50f;
+    const float FONT_INFO  = ROW_H   * 0.40f;
+
+    // テキスト矩形（左端: 武器名 / 右端: 価格。パネル幅比で配置）
+    // 矩形幅が文字列より狭いと改行されるため、想定最大文字数分の幅を確保する
+    // （SetWordWrapping(false) で改行自体も無効化済み）
+    const float LABEL_HALF_W = PNL_W * 0.28f;
+    const float LABEL_CX     = px + PNL_W * 0.06f + LABEL_HALF_W; // 左揃え: 左端 6%
+    const float PRICE_HALF_W = PNL_W * 0.18f;                     // "CR 100000" 9文字分
+    const float PRICE_CX     = px + PNL_W * 0.94f - PRICE_HALF_W; // 右揃え: 右端 6%
 
     if (g_WhiteTex >= 0)
     {
@@ -221,17 +254,14 @@ void Shop_DrawUI()
                     PNL_W * 0.9f, 1, XMFLOAT4(1,1,1,0.3f));
     }
 
-    // タイトル（所持金表示）
+    // タイトル（所持金表示）：タイトル帯の縦中心に配置
     char creditBuf[32];
     snprintf(creditBuf, sizeof(creditBuf), "SHOP   CR: %d", WaveManager_GetCredits());
-    g_pDWTitle->SetScale(scaleX, scaleY);
-    g_pDWTitle->BeginBatch();
-    g_pDWTitle->DrawAt(creditBuf, cx, py + TITLE_H * 0.25f, PNL_W * 0.45f,
-                       D2D1::ColorF(0.4f, 0.9f, 1.0f, 1.0f), 1.0f);
-    g_pDWTitle->EndBatch();
-    g_pDWTitle->SetScale(1.0f, 1.0f);
+    DrawTextFit(g_pDWTitle, creditBuf,
+                cx, py + TITLE_H * 0.5f, PNL_W * 0.45f, FONT_TITLE,
+                D2D1::ColorF(0.4f, 0.9f, 1.0f, 1.0f), scaleX, scaleY);
 
-    // 武器リスト
+    // 武器リスト：各行の縦中心に配置
     for (int i = 0; i < WEAPON_COUNT; ++i)
     {
         const float ry  = LIST_Y + i * ROW_H;
@@ -247,21 +277,15 @@ void Shop_DrawUI()
         char priceBuf[32];
         snprintf(priceBuf, sizeof(priceBuf), "CR %d", k_WeaponDefs[i].cost);
 
-        const float textY = ry + ROW_H * 0.25f;
+        const float rowCY = ry + ROW_H * 0.5f;
 
-        g_pDWItem->SetScale(scaleX, scaleY);
-        g_pDWItem->BeginBatch();
-        g_pDWItem->DrawAt(k_WeaponDefs[i].name, LABEL_X + PNL_W*0.15f, textY,
-                          PNL_W * 0.28f, nameCol, 1.0f);
-        g_pDWItem->EndBatch();
-        g_pDWItem->SetScale(1.0f, 1.0f);
+        DrawTextFit(g_pDWItem, k_WeaponDefs[i].name,
+                    LABEL_CX, rowCY, LABEL_HALF_W, FONT_ITEM,
+                    nameCol, scaleX, scaleY);
 
-        g_pDWInfo->SetScale(scaleX, scaleY);
-        g_pDWInfo->BeginBatch();
-        g_pDWInfo->DrawAt(priceBuf, PRICE_X, textY, PNL_W * 0.22f,
-                          D2D1::ColorF(0.7f, 0.9f, 0.5f, 1.0f), 1.0f);
-        g_pDWInfo->EndBatch();
-        g_pDWInfo->SetScale(1.0f, 1.0f);
+        DrawTextFit(g_pDWInfo, priceBuf,
+                    PRICE_CX, rowCY, PRICE_HALF_W, FONT_INFO,
+                    D2D1::ColorF(0.7f, 0.9f, 0.5f, 1.0f), scaleX, scaleY);
     }
 
     Direct3D_SetDepthEnable(true);

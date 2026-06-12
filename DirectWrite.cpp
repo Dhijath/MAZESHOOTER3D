@@ -304,6 +304,16 @@ void DirectWrite::SetScale(float sx, float sy)
 }
 
 //=============================================================================
+// 折り返し設定（false で矩形幅を超えても改行しない）
+//=============================================================================
+void DirectWrite::SetWordWrapping(bool wrap)
+{
+    if (pTextFormat)
+        pTextFormat->SetWordWrapping(
+            wrap ? DWRITE_WORD_WRAPPING_WRAP : DWRITE_WORD_WRAPPING_NO_WRAP);
+}
+
+//=============================================================================
 // 終了処理
 //=============================================================================
 void DirectWrite::Release()

@@ -9,6 +9,7 @@
 
 ==============================================================================*/
 #include "UIInput.h"
+#include "game_window.h"
 #include <windows.h>
 
 namespace
@@ -25,7 +26,9 @@ void UIInput_Update()
     // Mouse_GetState はマウスカメラ側（UpdateMouseCamera）が読む専用。
     // ここで読むとデルタが消費されてカメラが動かなくなるため、
     // ボタン状態は Windows API から直接取得する。
-    const bool leftNow = (GetKeyState(VK_LBUTTON) & 0x8000) != 0;
+    // 別ウィンドウがアクティブな間はクリックを拾わない。
+    const bool inFocus = (GetForegroundWindow() == GameWindow_GetHWND());
+    const bool leftNow = inFocus && (GetKeyState(VK_LBUTTON) & 0x8000) != 0;
     s_TrigLeft = leftNow && !s_PrevLeft;
     s_PrevLeft = leftNow;
 }

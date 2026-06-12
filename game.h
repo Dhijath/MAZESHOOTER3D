@@ -68,5 +68,8 @@ void Game_SetSurvivalMode(bool val);
 // サバイバル用：指定位置にエネミーをスポーン
 void Game_SpawnEnemy(const DirectX::XMFLOAT3& pos, int type);
 
+// サバイバル用：全エネミーをクリア（ウェーブ開始前の初期化）
+void Game_ClearEnemies();
+
 #endif // !GAME_H
 

@@ -11,6 +11,8 @@
 ==============================================================================*/
 
 #include "pad_logger.h"
+#include "game_window.h"
+#include <windows.h>
 #include <Xinput.h>
 #pragma comment(lib, "xinput.lib")
 
@@ -40,6 +42,17 @@ void PadLogger_Initialize()
 //==============================================================================
 void PadLogger_Update()
 {
+    // 別ウィンドウがアクティブな間はパッド入力を無視する
+    // （XInput はウィンドウフォーカスに関係なく状態が取れてしまうため）
+    if (GetForegroundWindow() != GameWindow_GetHWND())
+    {
+        ZeroMemory(&g_PadNow, sizeof(g_PadNow));
+        ZeroMemory(&g_PadPrev, sizeof(g_PadPrev));
+        g_TriggerState = 0;
+        g_ReleaseState = 0;
+        return;
+    }
+
     // 前フレームの状態を保存
     g_PadPrev = g_PadNow;
 

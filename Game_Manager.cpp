@@ -411,6 +411,42 @@ void GameManager_Update(double elapsed_time)
     {
         if (g_IsTransitioning) break;
 
+        //----------------------------------------------------------
+        // ポーズトグル（ESC / PAD_START）
+        // ショップ表示中は ESC がショップを閉じる操作と被るため抑止
+        //----------------------------------------------------------
+        if (!g_IsPaused && !Shop_IsOpen())
+        {
+            const bool pauseKey = KeyLogger_IsTrigger(KK_ESCAPE)
+                                || PadLogger_IsTrigger(PAD_START);
+            if (pauseKey)
+            {
+                g_IsPaused = true;
+                Player_OnPause();  // ループSE（ブースト等）を停止
+                Pause_Open();      // 入力状態をリセット（同フレームの誤検知防止）
+            }
+        }
+
+        //----------------------------------------------------------
+        // ポーズ中
+        //----------------------------------------------------------
+        if (g_IsPaused)
+        {
+            PauseResult pr = Pause_Update();
+            if (pr == PauseResult::Resume)
+            {
+                g_IsPaused = false;
+            }
+            else if (pr == PauseResult::GoTitle)
+            {
+                g_IsPaused = false;
+                Shop_Finalize();
+                WaveManager_Finalize();
+                BeginTransition(GameState::Title, BGM_TITLE);
+            }
+            break; // ポーズ中はゲーム更新をスキップ
+        }
+
         Game_Update(elapsed_time);
         WaveManager_Update(elapsed_time);
         Shop_Update(elapsed_time);
@@ -595,10 +631,17 @@ void GameManager_Update(double elapsed_time)
         }
         else if (g_GameState == GameState::Survival)
         {
-            Map_GenerateOutdoor(Map_GenerateRandomSeed());
-            Map_RegisterFloors();
+            // Game_Initialize は内部の Map_Initialize でダンジョンを生成するため、
+            // 屋外アリーナは「初期化後」に生成して上書きする（逆順だと消される）
             Game_Initialize();
             Game_SetSurvivalMode(true);
+            Game_SetBossRoomMode(false);
+            Map_GenerateOutdoor(Map_GenerateRandomSeed());
+            Map_RegisterFloors();
+            Game_ClearEnemies();   // ダンジョン用に湧いた初期敵を消す（敵はウェーブで湧かせる）
+            Player_SetPosition(Map_GetSpawnPosition(), true);
+            Player_SetFront({ 0.0f, 0.0f, 1.0f });
+            Player_Camera_Update(0.0);   // 新スポーン位置にカメラを即追従
             Score_Reset();
             Player_SetNormalWeaponIndex(static_cast<int>(WeaponID::WEAPON_MACHINEGUN));
             Player_SetLeftWeaponIndex  (static_cast<int>(WeaponID::WEAPON_SHIELD));
@@ -612,6 +655,7 @@ void GameManager_Update(double elapsed_time)
             Map_ResetGoalReachCount();
             g_InBossRoom = false;
             Game_SetBossRoomMode(false);
+            Game_SetSurvivalMode(false);
         }
         else if (g_GameState == GameState::Option)
         {
@@ -652,6 +696,8 @@ void GameManager_Draw()
         Shop_Draw();
         WaveManager_Draw();
         Shop_DrawUI();
+        if (g_IsPaused)
+            Pause_Draw();
         break;
     case GameState::PlayerDeath:
         Game_Draw();
@@ -697,6 +743,16 @@ void GameManager_Draw()
                 "{ENTER} Select",
                 "{A} Select");
         else
+            InputHint_Draw(
+                "{W}{K_A}{S}{K_D} Move    {SPACE} Jump    {MOUSE_MOVE} Aim    {MOUSE_R} R-ARM    {MOUSE_L} L-ARM    {ESC} Pause",
+                "{L_STICK} Move    {A} Jump    {R_STICK} Aim    {RB} R-ARM    {LB} L-ARM    {B} Lock-On    {START} Pause");
+        break;
+    case GameState::Survival:
+        if (g_IsPaused)
+            InputHint_Draw(
+                "{ENTER} Select",
+                "{A} Select");
+        else if (!Shop_IsOpen())   // ショップ表示中は Shop_DrawUI が自前のヒントを描く
             InputHint_Draw(
                 "{W}{K_A}{S}{K_D} Move    {SPACE} Jump    {MOUSE_MOVE} Aim    {MOUSE_R} R-ARM    {MOUSE_L} L-ARM    {ESC} Pause",
                 "{L_STICK} Move    {A} Jump    {R_STICK} Aim    {RB} R-ARM    {LB} L-ARM    {B} Lock-On    {START} Pause");

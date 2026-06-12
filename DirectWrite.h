@@ -188,6 +188,9 @@ public:
     // スケール変換を設定（仮想座標系→実ピクセル座標系のスケール）
     void SetScale(float sx, float sy);
 
+    // 折り返し設定（false で矩形幅を超えても改行しない。Init() 後に呼ぶ）
+    void SetWordWrapping(bool wrap);
+
     // 終了処理
     void Release();
 

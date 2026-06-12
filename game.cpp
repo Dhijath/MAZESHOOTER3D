@@ -179,8 +179,8 @@ void Game_Initialize()
     Map_Initialize();
     Skybox_Initialize();
 
-    Map_SetCeilingVisible(false);  // TODO: テスト用（確認後に消す）
-
+    // 天井あり（屋外マップを使うサバイバルは GameManager 側で false にする）
+    Map_SetCeilingVisible(true);
 
     // 念のため床登録を更新（支持面判定に使う場合がある）
     Map_RegisterFloors();
@@ -320,6 +320,13 @@ void Game_SetSurvivalMode(bool val)
 void Game_SpawnEnemy(const XMFLOAT3& pos, int type)
 {
     g_EnemyManager.Spawn(pos, static_cast<EnemyType>(type));
+}
+
+void Game_ClearEnemies()
+{
+    g_pBossEnemy   = nullptr;
+    g_BossDefeated = false;
+    g_EnemyManager.Initialize();
 }
 
 //==============================================================================

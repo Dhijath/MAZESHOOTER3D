@@ -24,6 +24,9 @@ void Map_GenerateOutdoor(std::uint32_t seed)
     const float FLOOR_Y = Map_Internal_GetFloorY();
     const float WALL_H  = Map_Internal_GetWallH();
 
+    // 屋外アリーナは天井なし（ダンジョンに戻るときは Game_Initialize が true に戻す）
+    Map_SetCeilingVisible(false);
+
     constexpr int TILE_FLOOR = 0;
     constexpr int TILE_WALL  = 1;
     constexpr int TILE_EMPTY = 2;
@@ -43,6 +46,62 @@ void Map_GenerateOutdoor(std::uint32_t seed)
     {
         tiles[y*W + 0]       = TILE_WALL;
         tiles[y*W + (W-1)]   = TILE_WALL;
+    }
+
+    //------------------------------------------------------------------
+    // 遮蔽物散布：矩形ブロック（柱・バリケード）をランダム配置
+    // ・プレイヤースポーン（ショップ）とボススポーン周辺は空ける
+    // ・他の壁と2タイル以上の間隔を保証（袋小路・狭路を作らない）
+    //------------------------------------------------------------------
+    const int spawnTX = W / 2, spawnTY = 4;
+    const int bossTX  = W / 2, bossTY  = H - 5;
+
+    // ブロックの矩形からタイル(px,py)までのチェビシェフ距離
+    auto rectDist = [](int bx, int by, int bw, int bh, int px, int py)
+    {
+        const int dx = (px < bx) ? bx - px : (px > bx + bw - 1) ? px - (bx + bw - 1) : 0;
+        const int dy = (py < by) ? by - py : (py > by + bh - 1) ? py - (by + bh - 1) : 0;
+        return (dx > dy) ? dx : dy;
+    };
+
+    {
+        // 遮蔽物サイズのバリエーション（柱〜横長バリケード）
+        constexpr int kBlockSizes[][2] = {
+            {1,1}, {2,2}, {3,3}, {2,3}, {3,2}, {1,4}, {4,1}, {1,3}, {3,1},
+        };
+        constexpr int kBlockSizeCount = sizeof(kBlockSizes) / sizeof(kBlockSizes[0]);
+        constexpr int kBlockTarget    = 30;   // 配置数
+        constexpr int kSpawnClear     = 7;    // スポーン周辺の禁止半径（タイル）
+        constexpr int kBossClear      = 5;    // ボススポーン周辺の禁止半径
+
+        std::uniform_int_distribution<int> posDist (3, W - 4);
+        std::uniform_int_distribution<int> sizeDist(0, kBlockSizeCount - 1);
+
+        int placed = 0;
+        for (int attempt = 0; attempt < 600 && placed < kBlockTarget; ++attempt)
+        {
+            const int* sz = kBlockSizes[sizeDist(rng)];
+            const int bw = sz[0], bh = sz[1];
+            const int bx = posDist(rng);
+            const int by = posDist(rng);
+            if (bx + bw > W - 3 || by + bh > H - 3) continue;
+
+            // スポーン保護領域
+            if (rectDist(bx, by, bw, bh, spawnTX, spawnTY) < kSpawnClear) continue;
+            if (rectDist(bx, by, bw, bh, bossTX,  bossTY)  < kBossClear)  continue;
+
+            // 周囲2タイルを含め全て床なら配置可（他ブロック・外周との間隔確保）
+            bool ok = true;
+            for (int y = by - 2; y <= by + bh + 1 && ok; ++y)
+                for (int x = bx - 2; x <= bx + bw + 1 && ok; ++x)
+                    if (tiles[y*W + x] != TILE_FLOOR) ok = false;
+            if (!ok) continue;
+
+            for (int y = by; y < by + bh; ++y)
+                for (int x = bx; x < bx + bw; ++x)
+                    tiles[y*W + x] = TILE_WALL;
+            ++placed;
+        }
     }
 
     //------------------------------------------------------------------
@@ -70,20 +129,29 @@ void Map_GenerateOutdoor(std::uint32_t seed)
     //------------------------------------------------------------------
     // スポーン・ゴール設定
     //------------------------------------------------------------------
-    Map_Internal_SetSpawnPos    (Map_Internal_TileToWorld(W/2, 4,   W, H, 1.5f));
-    Map_Internal_SetBossSpawnPos(Map_Internal_TileToWorld(W/2, H-5, W, H, 1.5f));
+    Map_Internal_SetSpawnPos    (Map_Internal_TileToWorld(spawnTX, spawnTY, W, H, 1.5f));
+    Map_Internal_SetBossSpawnPos(Map_Internal_TileToWorld(bossTX,  bossTY,  W, H, 1.5f));
     Map_Internal_SetGoalInvalid();
 
     //------------------------------------------------------------------
     // エネミースポーン散布
+    // ・遮蔽物の上は不可、プレイヤースポーンから8タイル以上離す
     //------------------------------------------------------------------
     Map_Internal_ClearEnemySpawns();
-    std::uniform_int_distribution<int> dist(5, W - 6);
-    for (int i = 0; i < 20; ++i)
     {
-        int tx = dist(rng), ty = dist(rng);
-        if (tiles[ty*W+tx] != TILE_FLOOR) continue;
-        Map_Internal_AddEnemySpawn(Map_Internal_TileToWorld(tx, ty, W, H, 1.5f));
+        constexpr int kEnemySpawnTarget = 20;
+        constexpr int kEnemySpawnClear  = 8;   // プレイヤースポーンからの最低距離
+
+        std::uniform_int_distribution<int> dist(5, W - 6);
+        int placed = 0;
+        for (int attempt = 0; attempt < 400 && placed < kEnemySpawnTarget; ++attempt)
+        {
+            const int tx = dist(rng), ty = dist(rng);
+            if (tiles[ty*W+tx] != TILE_FLOOR) continue;
+            if (rectDist(tx, ty, 1, 1, spawnTX, spawnTY) < kEnemySpawnClear) continue;
+            Map_Internal_AddEnemySpawn(Map_Internal_TileToWorld(tx, ty, W, H, 1.5f));
+            ++placed;
+        }
     }
 
     //------------------------------------------------------------------

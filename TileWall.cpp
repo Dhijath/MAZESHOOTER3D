@@ -165,15 +165,17 @@ void TileWall_BuildFromTiles(
     //--------------------------------------------------------------------------
     // +X / -X 面（Z方向に連結）
     // ・「壁タイル」かつ「隣が床タイル」の面だけ生成
+    // ・+X と -X は独立に走査する。同一ループで判定すると、厚さ1マスの壁
+    //   （両側が床）で +X 面の run がタイルを消費して -X 面の判定が
+    //   スキップされ、片側の壁が消えるバグになる
     //--------------------------------------------------------------------------
 
     for (int tx = 0; tx < w; ++tx)
     {
+        // +X 面（右が床）→ 法線は +X（床側を向く）
         int ty = 0;
-
         while (ty < h)
         {
-            // +X 面（右が床）→ 法線は +X（床側を向く）
             if (IsWall(tiles, w, h, tx, ty) &&
                 IsFloor(tiles, w, h, tx + 1, ty))
             {
@@ -196,12 +198,18 @@ void TileWall_BuildFromTiles(
                 EmitPlaneStack(
                     { +1.0f, 0.0f, 0.0f },
                     { 0.0f, 0.0f, +1.0f },
-                    cx, cz, widthW);;
+                    cx, cz, widthW);
 
                 continue;
             }
 
-            // -X 面（左が床）→ 法線は -X（床側を向く）
+            ++ty;
+        }
+
+        // -X 面（左が床）→ 法線は -X（床側を向く）
+        ty = 0;
+        while (ty < h)
+        {
             if (IsWall(tiles, w, h, tx, ty) &&
                 IsFloor(tiles, w, h, tx - 1, ty))
             {
@@ -236,15 +244,15 @@ void TileWall_BuildFromTiles(
     //--------------------------------------------------------------------------
     // +Z / -Z 面（X方向に連結）
     // ・「壁タイル」かつ「隣が床タイル」の面だけ生成
+    // ・X面と同じ理由で +Z と -Z を独立に走査する
     //--------------------------------------------------------------------------
 
     for (int ty = 0; ty < h; ++ty)
     {
+        // +Z 面（上が床）→ 法線は +Z（床側を向く）
         int tx = 0;
-
         while (tx < w)
         {
-            // +Z 面（上が床）→ 法線は +Z（床側を向く）
             if (IsWall(tiles, w, h, tx, ty) &&
                 IsFloor(tiles, w, h, tx, ty + 1))
             {
@@ -272,7 +280,13 @@ void TileWall_BuildFromTiles(
                 continue;
             }
 
-            // -Z 面（下が床）→ 法線は -Z（床側を向く）
+            ++tx;
+        }
+
+        // -Z 面（下が床）→ 法線は -Z（床側を向く）
+        tx = 0;
+        while (tx < w)
+        {
             if (IsWall(tiles, w, h, tx, ty) &&
                 IsFloor(tiles, w, h, tx, ty - 1))
             {
