@@ -2,7 +2,7 @@
 
    スラスターパーティクル [particle_thruster.cpp]
                                                          Author : 51106
-                                                         Date   : 2026/02/15
+                                                         Date   : 2026/04/01
 --------------------------------------------------------------------------------
    ThrusterParticle と ThrusterEmitter の実装
 
