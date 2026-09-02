@@ -57,9 +57,30 @@ namespace
     int g_LeftWeaponIdx  = WEAPON_SHIELD;     // 左腕武器ID（0-3）
     PlayerWeapon* g_pLeftWeapon = nullptr;    // 左腕武器インスタンス
 
+    //--------------------------------------------------------------------------
+    // 発射リコイル（バレルが銃口方向の後方へ後退し、時間で復帰する演出）
+    //--------------------------------------------------------------------------
+    float g_RightBarrelRecoil = 0.0f;   // 右腕バレルの後退量（ワールド単位）
+    float g_LeftBarrelRecoil  = 0.0f;   // 左腕バレルの後退量
+    constexpr float RECOIL_KICK         = 0.12f;  // 1発あたりの後退量
+    constexpr float RECOIL_RETURN_SPEED = 14.0f;  // 復帰速度（大きいほど速く戻る）
+
 
     bool g_IsJump = false;
     bool g_PlayerEnable = true;
+
+    //--------------------------------------------------------------------------
+    // ダッシュ（Shift / PAD_B）
+    //   ・エネルギーを消費して短距離バースト移動する
+    //   ・ダッシュ中にシールドを装備していれば接触で敵にダメージ
+    //--------------------------------------------------------------------------
+    float g_DashTimer    = 0.0f;   // ダッシュ有効時間（>0 の間が「ダッシュ中」）
+    float g_DashCooldown = 0.0f;   // 次にダッシュできるまでの待ち時間
+    constexpr float DASH_ENERGY_COST = 300.0f;  // 1回あたりのエネルギー消費（ENERGY_MAX=3000）
+    constexpr float DASH_SPEED       = 24.0f;   // バースト速度（通常の最高速 ≒ 11）
+    constexpr float DASH_DURATION    = 0.30f;   // 接触ダメージが有効な時間（秒）
+    constexpr float DASH_COOLDOWN    = 0.55f;   // 連続ダッシュ防止のクールダウン（秒）
+    constexpr int   DASH_CONTACT_DAMAGE = 300;  // シールドダッシュ接触ダメージ量
 
     float g_PlayerSpeedMultiplier = 2.0f;
     int g_PlayerWhightTexID = -1;        // プレイヤー矢印テクスチャ
@@ -103,9 +124,10 @@ namespace
     //--------------------------------------------------------------------------
     WeaponBeam* g_pBeamWeapon = nullptr;  // ビーム（固定・右クリック）
 
-    static constexpr int NORMAL_WEAPON_COUNT = 3;
-    PlayerWeapon* g_NormalWeapons[NORMAL_WEAPON_COUNT] = {};  // [0]Normal [1]Shotgun [2]Missile
-    int                  g_NormalWeaponIdx = 0;                       // E キーで切り替え
+    // g_NormalWeapons は WeaponID を添字にして参照する（SHIELD の枠は nullptr）
+    // [0]Normal [1]Shotgun [2]Missile [3]---(Shield) [4]MultiMissile
+    PlayerWeapon* g_NormalWeapons[WEAPON_COUNT] = {};
+    int                  g_NormalWeaponIdx = 0;                       // 現在の右腕通常武器（WeaponID）
 
     //--------------------------------------------------------------------------
     // 武器IDからインスタンスを生成するヘルパー
@@ -114,10 +136,11 @@ namespace
     {
         switch (weaponId)
         {
-        case WEAPON_MACHINEGUN: return new WeaponNormal();
-        case WEAPON_SHOTGUN:    return new WeaponShotgun();
-        case WEAPON_MISSILE:    return new WeaponMissile();
-        default:                return nullptr;
+        case WEAPON_MACHINEGUN:   return new WeaponNormal();
+        case WEAPON_SHOTGUN:      return new WeaponShotgun();
+        case WEAPON_MISSILE:      return new WeaponMissile();
+        case WEAPON_MULTIMISSILE: return new WeaponMultiMissile();
+        default:                  return nullptr;
         }
     }
 
@@ -256,6 +279,15 @@ namespace
             aimDir = XMVector3Normalize(XMLoadFloat3(&g_PlayerFront));
         }
 
+        // 発射リコイル：銃口方向(aimDir)の逆＝後方へバレルをずらす
+        {
+            XMVECTOR recoil = XMVectorNegate(aimDir) * g_RightBarrelRecoil;
+            barrelTrans = XMMatrixTranslation(
+                barrelOriginPos.x + XMVectorGetX(recoil),
+                barrelOriginPos.y + XMVectorGetY(recoil),
+                barrelOriginPos.z + XMVectorGetZ(recoil));
+        }
+
         // ローカル -Z がマズル方向なので aimZ を反転（バレルモデルのデフォルト向き対応）
         XMVECTOR aimZ = XMVectorNegate(aimDir);
         XMVECTOR aimX = XMVector3Normalize(XMVector3Cross(up, aimZ));
@@ -332,6 +364,15 @@ namespace
         else
         {
             aimDir = XMVector3Normalize(XMLoadFloat3(&g_PlayerFront));
+        }
+
+        // 発射リコイル：銃口方向(aimDir)の逆＝後方へバレルをずらす
+        {
+            XMVECTOR recoil = XMVectorNegate(aimDir) * g_LeftBarrelRecoil;
+            barrelTrans = XMMatrixTranslation(
+                barrelOriginPos.x + XMVectorGetX(recoil),
+                barrelOriginPos.y + XMVectorGetY(recoil),
+                barrelOriginPos.z + XMVectorGetZ(recoil));
         }
 
         XMVECTOR aimZ = XMVectorNegate(aimDir);
@@ -703,7 +744,7 @@ void Player_Initialize(const DirectX::XMFLOAT3& position, const DirectX::XMFLOAT
     // 武器システム初期化（再初期化の場合は既存リソースを先に解放）
     //--------------------------------------------------------------------------
     if (g_pBeamWeapon) { g_pBeamWeapon->Finalize(); delete g_pBeamWeapon; g_pBeamWeapon = nullptr; }
-    for (int i = 0; i < NORMAL_WEAPON_COUNT; ++i)
+    for (int i = 0; i < WEAPON_COUNT; ++i)
     {
         if (g_NormalWeapons[i]) { g_NormalWeapons[i]->Finalize(); delete g_NormalWeapons[i]; g_NormalWeapons[i] = nullptr; }
     }
@@ -713,13 +754,14 @@ void Player_Initialize(const DirectX::XMFLOAT3& position, const DirectX::XMFLOAT
     g_pBeamWeapon = new WeaponBeam();
     g_pBeamWeapon->Initialize();
 
-    // 通常スロット
+    // 通常スロット（WeaponID を添字にして生成。SHIELD の枠は nullptr のまま）
     g_NormalWeaponIdx = 0;
-    g_NormalWeapons[0] = new WeaponNormal();
-    g_NormalWeapons[1] = new WeaponShotgun();
-    g_NormalWeapons[2] = new WeaponMissile();
-    for (int i = 0; i < NORMAL_WEAPON_COUNT; ++i)
-        g_NormalWeapons[i]->Initialize();
+    g_NormalWeapons[WEAPON_MACHINEGUN]   = new WeaponNormal();
+    g_NormalWeapons[WEAPON_SHOTGUN]      = new WeaponShotgun();
+    g_NormalWeapons[WEAPON_MISSILE]      = new WeaponMissile();
+    g_NormalWeapons[WEAPON_MULTIMISSILE] = new WeaponMultiMissile();
+    for (int i = 0; i < WEAPON_COUNT; ++i)
+        if (g_NormalWeapons[i]) g_NormalWeapons[i]->Initialize();
 
     //--------------------------------------------------------------------------
     // SE読み込み（通常スロット切り替えSEのみ。射撃SEは各武器クラスが管理）
@@ -805,7 +847,7 @@ void Player_Finalize() // プレイヤーの終了処理（モデル解放・ス
         delete g_pBeamWeapon;
         g_pBeamWeapon = nullptr;
     }
-    for (int i = 0; i < NORMAL_WEAPON_COUNT; ++i)
+    for (int i = 0; i < WEAPON_COUNT; ++i)
     {
         if (g_NormalWeapons[i])
         {
@@ -979,6 +1021,40 @@ void Player_Update(double elapsed_time)
         velocity += moveDir * static_cast<float>(2000.0 / 90.0 * elapsed_time) * g_PlayerSpeedMultiplier;
     }
 
+    //--------------------------------------------------------------------------
+    // ダッシュ（Shift / PAD_B）：エネルギーを消費して短距離バースト移動
+    //   ・移動入力があればその方向、なければ正面方向へ加速
+    //   ・シールド装備中はダッシュ中の接触で敵にダメージ（Player_IsShieldDashing）
+    //--------------------------------------------------------------------------
+    if (g_DashCooldown > 0.0f) g_DashCooldown -= static_cast<float>(elapsed_time);
+    if (g_DashTimer    > 0.0f) g_DashTimer    -= static_cast<float>(elapsed_time);
+
+    const bool dashInput = KeyLogger_IsTrigger(KK_LEFTSHIFT) || PadLogger_IsTrigger(PAD_B);
+    if (dashInput && g_DashCooldown <= 0.0f)
+    {
+        const float energy = g_pBeamWeapon ? g_pBeamWeapon->GetEnergy() : 0.0f;
+        if (energy >= DASH_ENERGY_COST)
+        {
+            // ダッシュ方向：移動入力があればその方向、なければ正面（水平化）
+            XMVECTOR dashDir = moveDir;
+            if (XMVectorGetX(XMVector3LengthSq(dashDir)) < 0.0001f)
+                dashDir = XMVector3Normalize(XMVectorSet(g_PlayerFront.x, 0.0f, g_PlayerFront.z, 0.0f));
+
+            velocity += dashDir * DASH_SPEED;
+            if (g_pBeamWeapon) g_pBeamWeapon->AddEnergy(-DASH_ENERGY_COST);
+
+            g_DashTimer    = DASH_DURATION;
+            g_DashCooldown = DASH_COOLDOWN;
+
+            // ダッシュ音（ブーストSEを大きめの音量で1回鳴らす）
+            if (g_SeBoost >= 0)
+            {
+                SetAudioVolume(g_SeBoost, 0.90f);
+                PlayAudio(g_SeBoost, false);
+            }
+        }
+    }
+
     // ── ブーストSE ──────────────────────────────────────────
     // 移動中は1秒ごとに再生。空中上昇中は音量を最大 0.80f まで上げる
     if (g_SeBoost >= 0)
@@ -1094,6 +1170,13 @@ void Player_Update(double elapsed_time)
     if (g_pLeftWeapon)
         g_pLeftWeapon->Update(elapsed_time);
 
+    // 発射リコイルを0へ復帰（指数減衰）
+    {
+        const float t = std::min(1.0f, RECOIL_RETURN_SPEED * static_cast<float>(elapsed_time));
+        g_RightBarrelRecoil -= g_RightBarrelRecoil * t;
+        g_LeftBarrelRecoil  -= g_LeftBarrelRecoil  * t;
+    }
+
     //--------------------------------------------------------------------------
     // 発射ボタン判定
     //   RB / マウス右          = 右腕
@@ -1143,7 +1226,11 @@ void Player_Update(double elapsed_time)
         }
 
         if (g_RightWeaponIdx != WEAPON_SHIELD && g_NormalWeapons[g_NormalWeaponIdx])
-            g_NormalWeapons[g_NormalWeaponIdx]->TryFire(muzzlePos, aimDir, g_PlayerDamageMultiplier);
+        {
+            // 実際に発射できたフレームだけリコイルをキックする
+            if (g_NormalWeapons[g_NormalWeaponIdx]->TryFire(muzzlePos, aimDir, g_PlayerDamageMultiplier))
+                g_RightBarrelRecoil = RECOIL_KICK;
+        }
     }
 
     //--------------------------------------------------------------------------
@@ -1160,7 +1247,8 @@ void Player_Update(double elapsed_time)
         XMStoreFloat3(&leftAimDir,
             XMVector3Normalize(XMVector3TransformNormal(XMVectorSet(0.0f, 0.0f, -1.0f, 0.0f), leftWorld)));
 
-        g_pLeftWeapon->TryFire(leftMuzzlePos, leftAimDir, g_PlayerDamageMultiplier);
+        if (g_pLeftWeapon->TryFire(leftMuzzlePos, leftAimDir, g_PlayerDamageMultiplier))
+            g_LeftBarrelRecoil = RECOIL_KICK;
     }
 
     //--------------------------------------------------------------------------
@@ -1684,6 +1772,24 @@ void Player_ResetHP() // HPと無敵時間を初期状態に戻す
 bool Player_IsInvincible() // 無敵中かどうかを返す（trueで無敵）
 {
     return g_InvincibleTimer > 0.0;
+}
+
+bool Player_IsDashing() // ダッシュ中かどうかを返す（trueでダッシュ中）
+{
+    return g_DashTimer > 0.0f;
+}
+
+// ダッシュ中 かつ シールドを装備している（左右どちらかのアーム）
+// → エネミー側がこれを見て「接触ダメージを与える側」に切り替える
+bool Player_IsShieldDashing()
+{
+    if (g_DashTimer <= 0.0f) return false;
+    return (g_RightWeaponIdx == WEAPON_SHIELD) || (g_LeftWeaponIdx == WEAPON_SHIELD);
+}
+
+int Player_GetDashContactDamage()
+{
+    return DASH_CONTACT_DAMAGE;
 }
 
 //==============================================================================

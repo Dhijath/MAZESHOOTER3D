@@ -352,6 +352,74 @@ void Shield_Draw(const XMFLOAT3& center)
     ctx->RSSetState(nullptr);
 }
 
+//==============================================================================
+// Shield_DrawAt
+//   プレビュー用に、任意の view/proj・中心・半径で球体シールドを描画する。
+//   g_Active（ゲーム中のガード状態）に依存しない。アセンブリ/ショップ画面用。
+//==============================================================================
+void Shield_DrawAt(const XMFLOAT3& center, const XMFLOAT4X4& view,
+                   const XMFLOAT4X4& proj, float radius)
+{
+    if (!g_pVB) return;
+
+    auto* ctx = Direct3D_GetContext();
+
+    const XMFLOAT4 color = { 0.2f, 0.6f, 1.0f, 0.28f };  // ゲーム中のシールドと同系の水色
+
+    // CPU 側でワールド座標へ変換して頂点バッファへ書き込み
+    ShieldVertex verts[VERTEX_COUNT];
+    for (int i = 0; i < VERTEX_COUNT; ++i)
+    {
+        verts[i].pos =
+        {
+            s_LocalVerts[i].x * radius + center.x,
+            s_LocalVerts[i].y * radius + center.y,
+            s_LocalVerts[i].z * radius + center.z,
+            1.0f
+        };
+        verts[i].color = color;
+    }
+
+    D3D11_MAPPED_SUBRESOURCE mapped;
+    if (SUCCEEDED(ctx->Map(g_pVB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+    {
+        memcpy(mapped.pData, verts, sizeof(verts));
+        ctx->Unmap(g_pVB, 0);
+    }
+
+    // 指定された view/proj を定数バッファへ
+    {
+        XMFLOAT4X4 vt, pt;
+        XMStoreFloat4x4(&vt, XMMatrixTranspose(XMLoadFloat4x4(&view)));
+        XMStoreFloat4x4(&pt, XMMatrixTranspose(XMLoadFloat4x4(&proj)));
+        ctx->UpdateSubresource(g_pCBView, 0, nullptr, &vt, 0, 0);
+        ctx->UpdateSubresource(g_pCBProj, 0, nullptr, &pt, 0, 0);
+    }
+
+    ctx->VSSetShader(g_pVS, nullptr, 0);
+    ctx->PSSetShader(g_pPS, nullptr, 0);
+    ctx->IASetInputLayout(g_pIL);
+
+    UINT stride = sizeof(ShieldVertex), offset = 0;
+    ctx->IASetVertexBuffers(0, 1, &g_pVB, &stride, &offset);
+    ctx->IASetIndexBuffer(g_pIB, DXGI_FORMAT_R16_UINT, 0);
+    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    ctx->VSSetConstantBuffers(1, 1, &g_pCBView);
+    ctx->VSSetConstantBuffers(2, 1, &g_pCBProj);
+
+    const float blendFactor[4] = { 0, 0, 0, 0 };
+    ctx->OMSetBlendState(g_pBS, blendFactor, 0xFFFFFFFF);
+    ctx->OMSetDepthStencilState(g_pDSS, 0);
+    ctx->RSSetState(g_pRS);
+
+    ctx->DrawIndexed(INDEX_COUNT, 0, 0);
+
+    ctx->OMSetBlendState(nullptr, blendFactor, 0xFFFFFFFF);
+    ctx->OMSetDepthStencilState(nullptr, 0);
+    ctx->RSSetState(nullptr);
+}
+
 
 //==============================================================================
 // その他 API

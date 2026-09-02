@@ -9,9 +9,11 @@
 #include "PlayerWeapon.h"
 #include "bullet.h"
 #include "Audio.h"
+#include "game.h"     // Game_GetLockOnWorldPos
 #include <DirectXMath.h>
 #include <cstdlib>   // rand()
 #include <cmath>
+#include <algorithm> // std::clamp
 
 using namespace DirectX;
 
@@ -102,6 +104,93 @@ bool WeaponMissile::TryFire(
 
 
 //==============================================================================
+// WeaponMultiMissile（マルチミサイル）
+//==============================================================================
+
+void WeaponMultiMissile::Initialize()
+{
+    m_cooldown = 0.0;
+    m_shootSE  = LoadAudioWithVolume("resource/sound/maou_se_battle_gun05.wav", 0.5f);
+}
+
+void WeaponMultiMissile::Finalize()
+{
+    UnloadAudio(m_shootSE);
+    m_shootSE = -1;
+}
+
+void WeaponMultiMissile::Update(double dt)
+{
+    if (m_cooldown > 0.0) m_cooldown -= dt;
+}
+
+bool WeaponMultiMissile::TryFire(
+    const XMFLOAT3& muzzlePos,
+    const XMFLOAT3& aimDir,
+    float           damageMult)
+{
+    if (m_cooldown > 0.0) return false;
+
+    const int finalDamage = static_cast<int>(BASE_DAMAGE * damageMult);
+
+    const XMVECTOR vMuzzle = XMLoadFloat3(&muzzlePos);
+    const XMVECTOR vAim    = XMVector3Normalize(XMLoadFloat3(&aimDir));
+
+    // 標的位置：ロックオン優先、なければ照準方向の前方 TARGET_FORWARD_DIST
+    XMVECTOR vTarget;
+    XMFLOAT3 lockPos;
+    if (Game_GetLockOnWorldPos(&lockPos))
+        vTarget = XMLoadFloat3(&lockPos);
+    else
+        vTarget = vMuzzle + vAim * TARGET_FORWARD_DIST;
+
+    // 標的への方向・距離
+    XMVECTOR toTarget = vTarget - vMuzzle;
+    const float dist  = sqrtf(XMVectorGetX(XMVector3LengthSq(toTarget)));
+    XMVECTOR dir      = (dist > 0.0001f) ? XMVector3Normalize(toTarget) : vAim;
+
+    // 直交基底（横 right / 上 up）
+    XMVECTOR worldUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+    XMVECTOR rightB  = XMVector3Cross(worldUp, dir);
+    if (XMVectorGetX(XMVector3LengthSq(rightB)) < 0.0001f)
+        rightB = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);   // 真上/真下を向いている場合の保険
+    rightB = XMVector3Normalize(rightB);
+    XMVECTOR upB = XMVector3Normalize(XMVector3Cross(dir, rightB));
+
+    const XMVECTOR mid = (vMuzzle + vTarget) * 0.5f;
+
+    // 曲線を飛び切る時間（距離ベースでクランプ）
+    const float duration = std::clamp(dist / BULLET_SPEED, 0.35f, 1.2f);
+
+    // MISSILE_COUNT 本を横に均等配置し、弧を描いて拡散 → 標的へ収束
+    for (int i = 0; i < MISSILE_COUNT; ++i)
+    {
+        const float lat = (MISSILE_COUNT > 1)
+            ? (static_cast<float>(i) / (MISSILE_COUNT - 1)) * 2.0f - 1.0f  // -1..+1
+            : 0.0f;
+
+        const float lateral = lat * SPREAD_WIDTH;                 // 横方向の膨らみ
+        const float arc     = ARC_HEIGHT * (1.0f - lat * lat);    // 中央ほど高く弧を描く
+
+        // 制御点：中点から横＋上へオフセット
+        const XMVECTOR p1 = mid + rightB * lateral + upB * (arc + ARC_HEIGHT * 0.5f);
+
+        XMFLOAT3 f0, f1, f2;
+        XMStoreFloat3(&f0, vMuzzle);
+        XMStoreFloat3(&f1, p1);
+        XMStoreFloat3(&f2, vTarget);
+
+        Bullet_CreateMissileBezier(f0, f1, f2, duration, BULLET_SPEED, finalDamage, EXPLOSION_RADIUS);
+    }
+
+    if (m_shootSE >= 0) PlayAudio(m_shootSE, false);
+
+    m_cooldown = FIRE_INTERVAL;
+    return true;
+}
+
+
+//==============================================================================
 // WeaponBeam（ビーム）
 //==============================================================================
 
@@ -123,6 +212,14 @@ void WeaponBeam::Update(double dt)
 {
     if (m_cooldown   > 0.0) m_cooldown   -= dt;
     if (m_seCooldown > 0.0) m_seCooldown -= dt;
+
+    // エネルギー自動回復（1分で全回復ペース）。
+    // 飛行時は消費(150/秒)の方が大きいので飛びっぱなしにはならない。
+    if (m_energy < ENERGY_MAX)
+    {
+        m_energy += ENERGY_REGEN * static_cast<float>(dt);
+        if (m_energy > ENERGY_MAX) m_energy = ENERGY_MAX;
+    }
 }
 
 bool WeaponBeam::TryFire(

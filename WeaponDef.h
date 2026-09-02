@@ -17,6 +17,7 @@ enum WeaponID
     WEAPON_SHOTGUN,
     WEAPON_MISSILE,
     WEAPON_SHIELD,
+    WEAPON_MULTIMISSILE,   // マルチミサイル（ベジェ曲線で拡散する誘導ミサイル）
     WEAPON_COUNT
 };
 

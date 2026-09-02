@@ -155,6 +155,41 @@ private:
 
 
 //==============================================================================
+// マルチミサイル（WeaponMultiMissile）
+//
+// ■特性
+// ・1射で MISSILE_COUNT 発を一斉発射
+// ・各ミサイルが二次ベジェ曲線で横に弧を描いて拡散 → 標的へ収束
+// ・標的はロックオン優先、無ければ照準方向の前方
+//==============================================================================
+class WeaponMultiMissile : public PlayerWeapon
+{
+public:
+    void        Initialize() override;
+    void        Finalize()   override;
+    void        Update(double dt) override;
+    bool        TryFire(const DirectX::XMFLOAT3& muzzlePos,
+                        const DirectX::XMFLOAT3& aimDir,
+                        float damageMult) override;
+    const char* GetName() const override { return "マルチミサイル"; }
+
+private:
+    static constexpr double FIRE_INTERVAL    = 1.20;    // 発射間隔（秒）
+    static constexpr float  BULLET_SPEED     = 28.0f;   // 曲線到達後の弾速（単位/秒）
+    static constexpr int    BASE_DAMAGE      = 90;      // 1発あたりの爆発ダメージ
+    static constexpr float  EXPLOSION_RADIUS = 6.0f;    // 爆発半径
+
+    static constexpr int    MISSILE_COUNT       = 5;      // 1射あたりの本数
+    static constexpr float  SPREAD_WIDTH        = 5.0f;   // 横方向の膨らみ幅
+    static constexpr float  ARC_HEIGHT          = 3.0f;   // 上方向の弧の高さ
+    static constexpr float  TARGET_FORWARD_DIST = 30.0f;  // 非ロックオン時の標的までの前方距離
+
+    double m_cooldown = 0.0;
+    int    m_shootSE  = -1;
+};
+
+
+//==============================================================================
 // ビーム（WeaponBeam）
 //
 // ■特性
@@ -184,6 +219,7 @@ private:
     static constexpr int    BASE_DAMAGE   = 4;        // 基礎ダメージ
     static constexpr float  ENERGY_MAX    = 3000.0f;  // エネルギー最大値
     static constexpr float  ENERGY_COST   = 1.0f;    // 1発のエネルギーコスト
+    static constexpr float  ENERGY_REGEN  = 50.0f;   // 自動回復量/秒（3000 を約60秒で全回復）
     static constexpr double SE_INTERVAL   = 0.1;     // SE重複再生防止間隔（秒）
 
     double m_cooldown   = 0.0;

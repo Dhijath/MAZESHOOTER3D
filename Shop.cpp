@@ -6,6 +6,7 @@
 #include "Shop.h"
 #include "WaveManager.h"
 #include "WeaponDef.h"
+#include "AssemblyScreen.h"
 #include "player.h"
 #include "key_logger.h"
 #include "pad_logger.h"
@@ -25,9 +26,9 @@ using namespace DirectX;
 
 namespace
 {
-    static XMFLOAT3 g_Pos     = {};
-    static bool     g_IsOpen  = false;
-    static int      g_Cursor  = 0;
+    static XMFLOAT3 g_Pos       = {};
+    static bool     g_IsOpen    = false;
+    static int      g_ShopBudget = 0;   // ショップを開いた時点の所持金（購入額算出用）
     static int      g_TexShop = -1;
     static int      g_WhiteTex = -1;
     static int      g_SeOpen   = -1;
@@ -77,7 +78,6 @@ void Shop_Initialize(const XMFLOAT3& pos)
 {
     g_Pos    = pos;
     g_IsOpen = false;
-    g_Cursor = 0;
 
     g_TexShop  = Texture_Load(L"resource/texture/white.png"); // TODO: 専用テクスチャ
     g_WhiteTex = Texture_Load(L"resource/texture/white.png");
@@ -124,6 +124,9 @@ void Shop_Initialize(const XMFLOAT3& pos)
 
 void Shop_Finalize()
 {
+    // ショップを開いたまま終了する場合はアセンブリ画面も後始末する
+    if (g_IsOpen) { AssemblyScreen_SetShopMode(false, 0); AssemblyScreen_Finalize(); }
+
     if (g_pDWTitle) { g_pDWTitle->Release(); delete g_pDWTitle; g_pDWTitle = nullptr; }
     if (g_pDWItem)  { g_pDWItem->Release();  delete g_pDWItem;  g_pDWItem  = nullptr; }
     if (g_pDWInfo)  { g_pDWInfo->Release();  delete g_pDWInfo;  g_pDWInfo  = nullptr; }
@@ -134,58 +137,44 @@ void Shop_Finalize()
     g_IsOpen = false;
 }
 
-void Shop_Update(double)
+void Shop_Update(double elapsed_time)
 {
-    const bool inRange = (DistToPlayer() <= INTERACT_DIST);
-
     if (!g_IsOpen)
     {
-        // 近くでEキー/Aボタン→開く（フェーズ問わずいつでも可）
+        // 近くでEキー/Aボタン→アセンブリ画面をショップとして開く
+        const bool inRange = (DistToPlayer() <= INTERACT_DIST);
         if (inRange && (KeyLogger_IsTrigger(KK_E) || PadLogger_IsTrigger(PAD_A)))
         {
+            // 装備中の武器を初期値、所持金を予算にしてショップモードで開く
+            AssemblyScreen_SetDefaults(
+                static_cast<WeaponID>(Player_GetRightWeaponIndex()),
+                static_cast<WeaponID>(Player_GetLeftWeaponIndex()));
+            AssemblyScreen_Initialize();                       // ※ SetDefaults の後
+            g_ShopBudget = WaveManager_GetCredits();
+            AssemblyScreen_SetShopMode(true, g_ShopBudget);    // ※ Initialize の後
+
             g_IsOpen = true;
-            g_Cursor = 0;
             PlayAudio(g_SeOpen, false);
         }
         return;
     }
 
-    // ショップから離れたら自動で閉じる
-    if (!inRange)
+    // ショップ表示中はアセンブリ画面（ショップモード）を駆動する。
+    // 開いている間はゲームが凍結されるためプレイヤーは移動できない（＝距離で閉じない）。
+    if (AssemblyScreen_Update(elapsed_time))
     {
-        g_IsOpen = false;
-        return;
-    }
-
-    // ショップ操作
-    if (UI_IsMoveUp())
-    {
-        g_Cursor = (g_Cursor + WEAPON_COUNT - 1) % WEAPON_COUNT;
-        PlayAudio(g_SeCursor, false);
-    }
-    if (UI_IsMoveDown())
-    {
-        g_Cursor = (g_Cursor + 1) % WEAPON_COUNT;
-        PlayAudio(g_SeCursor, false);
-    }
-
-    if (UI_IsConfirm())
-    {
-        const int cost = k_WeaponDefs[g_Cursor].cost;
-        if (WaveManager_SpendCredits(cost))
+        if (!AssemblyScreen_WasCancelled())
         {
-            // 右腕に装備（後で左右選択も追加できる）
-            Player_SetNormalWeaponIndex(g_Cursor);
+            // 購入確定：装備中から変更したぶんの差額を消費し、両腕を装備する
+            const int spent = g_ShopBudget - AssemblyScreen_GetRemainingCredits();
+            if (spent > 0) WaveManager_SpendCredits(spent);
+
+            Player_SetNormalWeaponIndex(static_cast<int>(AssemblyScreen_GetRightWeapon()));
+            Player_SetLeftWeaponIndex  (static_cast<int>(AssemblyScreen_GetLeftWeapon()));
             PlayAudio(g_SeSelect, false);
         }
-        else
-        {
-            PlayAudio(g_SeError, false); // クレジット不足
-        }
-    }
 
-    if (UI_IsCancel())
-    {
+        AssemblyScreen_Finalize();
         g_IsOpen = false;
     }
 }
@@ -208,93 +197,14 @@ void Shop_Draw()
 void Shop_DrawUI()
 {
     if (!g_IsOpen) return;
-    if (!g_pDWTitle || !g_pDWItem || !g_pDWInfo) return;
 
-    const float sw = (float)SPRITE_SCREEN_W;
-    const float sh = (float)SPRITE_SCREEN_H;
-    const float scaleX = (float)Direct3D_GetBackBufferWidth()  / 1600.0f;
-    const float scaleY = (float)Direct3D_GetBackBufferHeight() / 900.0f;
+    // ショップ本体はアセンブリ画面（ショップモード）をそのまま描画する
+    AssemblyScreen_Draw();
 
-    Direct3D_SetDepthEnable(false);
-    Direct3D_SetBlendState(true);
-    Sprite_Begin();
-
-    // パネル（画面比率で管理）
-    const float PNL_W   = sw * 0.62f;
-    const float PNL_H   = sh * 0.80f;
-    const float px      = sw * 0.5f - PNL_W * 0.5f;
-    const float py      = sh * 0.5f - PNL_H * 0.5f;
-    const float cx      = sw * 0.5f;
-    const float ROW_H   = PNL_H / (WEAPON_COUNT + 1.5f);
-    const float TITLE_H = ROW_H * 0.9f;
-    const float LIST_Y  = py + TITLE_H + ROW_H * 0.3f;
-
-    // 文字サイズは行・タイトルの高さ比で決定（枠が変われば文字も追従する）
-    const float FONT_TITLE = TITLE_H * 0.60f;
-    const float FONT_ITEM  = ROW_H   * 0.50f;
-    const float FONT_INFO  = ROW_H   * 0.40f;
-
-    // テキスト矩形（左端: 武器名 / 右端: 価格。パネル幅比で配置）
-    // 矩形幅が文字列より狭いと改行されるため、想定最大文字数分の幅を確保する
-    // （SetWordWrapping(false) で改行自体も無効化済み）
-    const float LABEL_HALF_W = PNL_W * 0.28f;
-    const float LABEL_CX     = px + PNL_W * 0.06f + LABEL_HALF_W; // 左揃え: 左端 6%
-    const float PRICE_HALF_W = PNL_W * 0.18f;                     // "CR 100000" 9文字分
-    const float PRICE_CX     = px + PNL_W * 0.94f - PRICE_HALF_W; // 右揃え: 右端 6%
-
-    if (g_WhiteTex >= 0)
-    {
-        Sprite_Draw(g_WhiteTex, px, py, PNL_W, PNL_H, XMFLOAT4(0,0,0,0.8f));
-        Sprite_Draw(g_WhiteTex, px,           py,          PNL_W, 2, XMFLOAT4(1,1,1,0.5f));
-        Sprite_Draw(g_WhiteTex, px,           py+PNL_H-2,  PNL_W, 2, XMFLOAT4(1,1,1,0.5f));
-        Sprite_Draw(g_WhiteTex, px,           py,          2, PNL_H, XMFLOAT4(1,1,1,0.5f));
-        Sprite_Draw(g_WhiteTex, px+PNL_W-2,  py,          2, PNL_H, XMFLOAT4(1,1,1,0.5f));
-        // タイトル下区切り線
-        Sprite_Draw(g_WhiteTex, px + PNL_W*0.05f, py + TITLE_H,
-                    PNL_W * 0.9f, 1, XMFLOAT4(1,1,1,0.3f));
-    }
-
-    // タイトル（所持金表示）：タイトル帯の縦中心に配置
-    char creditBuf[32];
-    snprintf(creditBuf, sizeof(creditBuf), "SHOP   CR: %d", WaveManager_GetCredits());
-    DrawTextFit(g_pDWTitle, creditBuf,
-                cx, py + TITLE_H * 0.5f, PNL_W * 0.45f, FONT_TITLE,
-                D2D1::ColorF(0.4f, 0.9f, 1.0f, 1.0f), scaleX, scaleY);
-
-    // 武器リスト：各行の縦中心に配置
-    for (int i = 0; i < WEAPON_COUNT; ++i)
-    {
-        const float ry  = LIST_Y + i * ROW_H;
-        const bool  sel = (i == g_Cursor);
-
-        if (sel && g_WhiteTex >= 0)
-            Sprite_Draw(g_WhiteTex, px + 2, ry, PNL_W - 4, ROW_H - 2, XMFLOAT4(1,1,1,0.12f));
-
-        const D2D1_COLOR_F nameCol = sel
-            ? D2D1::ColorF(1.0f, 0.9f, 0.3f, 1.0f)
-            : D2D1::ColorF(0.9f, 0.9f, 0.9f, 1.0f);
-
-        char priceBuf[32];
-        snprintf(priceBuf, sizeof(priceBuf), "CR %d", k_WeaponDefs[i].cost);
-
-        const float rowCY = ry + ROW_H * 0.5f;
-
-        DrawTextFit(g_pDWItem, k_WeaponDefs[i].name,
-                    LABEL_CX, rowCY, LABEL_HALF_W, FONT_ITEM,
-                    nameCol, scaleX, scaleY);
-
-        DrawTextFit(g_pDWInfo, priceBuf,
-                    PRICE_CX, rowCY, PRICE_HALF_W, FONT_INFO,
-                    D2D1::ColorF(0.7f, 0.9f, 0.5f, 1.0f), scaleX, scaleY);
-    }
-
-    Direct3D_SetDepthEnable(true);
-
-    // ヒント
-    Direct3D_BindMainRenderTarget();
+    // 操作ヒント（アセンブリ準拠。ショップなので Back → Close）
     InputHint_Draw(
-        "{UP}{DOWN} Move    {ENTER} Buy    {ESC} Close",
-        "{DPAD_UP}{DPAD_DN} Move    {A} Buy    {B} Close");
+        "{W}{S} Move    {ENTER} Set / Buy    {TAB} Jump    {ESC} Close",
+        "{DPAD_UP}{DPAD_DN} Move    {A} Set / Buy    {LB}{RB} Jump    {B} Close");
 }
 
 bool Shop_IsOpen() { return g_IsOpen; }

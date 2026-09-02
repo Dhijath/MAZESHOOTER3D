@@ -271,8 +271,10 @@ void Enemy::Update(double elapsed_time)
     // 死亡判定（スコア・アイテムは各サブクラスまたはここで一括処理）
     if (IsDead() && IsAlive())
     {
-        // 死亡を遅延させるエネミー（ボス）は外部（game.cpp）から ConfirmDeath() で確定
-        if (IsDeferDeath()) return;
+        // 死亡を遅延させるエネミー（ボス）は外部（game.cpp）から ConfirmDeath() で確定。
+        // ただしサバイバルモードは撃破演出が無く、遅延させると死亡ボスが残って
+        // ウェーブが終わらないため、即座に通常の死亡処理（スコア・クレジット・ドロップ）を行う。
+        if (IsDeferDeath() && !Game_IsSurvivalMode()) return;
 
         m_IsAlive = false;
         Score_Addscore(GetKillScore());
@@ -650,9 +652,48 @@ void Enemy::ResolvePlayerCollision(XMVECTOR* ioPos, XMVECTOR* ioVel)
 
     }
 
-    // 接触ダメージ（クールダウン中はダメージとSEをスキップ）
     constexpr int   ENEMY_DAMAGE            = 90;
     constexpr float CONTACT_DAMAGE_INTERVAL = 0.5f; // 0.5秒に1回ダメージ
+
+    XMFLOAT3 playerPosF = Player_GetPosition();
+
+    //--------------------------------------------------------------------------
+    // シールドダッシュ中：プレイヤーが体当たりする側 → エネミーがダメージを受ける
+    //--------------------------------------------------------------------------
+    if (Player_IsShieldDashing())
+    {
+        if (m_ContactDamageCooldown <= 0.0f)
+        {
+            const int dmg = Player_GetDashContactDamage();
+            UpdateAudioAttenuation(g_enemy_hitSE, CalcDistToPlayer(m_Position), ATTENUATION_MAX_DIST);
+            PlayAudio(g_enemy_hitSE, false);
+
+            Damage(dmg);
+            DamagePopup_Add(m_Position, dmg);
+            m_ContactDamageCooldown = CONTACT_DAMAGE_INTERVAL;
+
+            if (IsDead() && !IsDeferDeath())
+            {
+                UpdateAudioAttenuation(g_enemy_deadSE, CalcDistToPlayer(m_Position), ATTENUATION_MAX_DIST);
+                PlayAudio(g_enemy_deadSE, false);
+                SparkEffect_Create(m_Position, 1.5f);
+            }
+        }
+
+        // エネミーをプレイヤーから遠ざける（押し出し）
+        XMVECTOR pushDir = XMLoadFloat3(&m_Position) - XMLoadFloat3(&playerPosF);
+        pushDir = XMVectorSetY(pushDir, 0.0f);
+        if (XMVectorGetX(XMVector3LengthSq(pushDir)) > 0.0001f)
+        {
+            constexpr float ENEMY_KNOCKBACK = 12.0f;
+            XMVECTOR push = XMVector3Normalize(pushDir) * ENEMY_KNOCKBACK;
+            XMVECTOR curVel = *ioVel;
+            *ioVel = curVel + push;
+        }
+        return; // プレイヤーはダメージもノックバックも受けない
+    }
+
+    // 接触ダメージ（クールダウン中はダメージとSEをスキップ）
     if (m_ContactDamageCooldown <= 0.0f)
     {
         Player_TakeDamage(ENEMY_DAMAGE);
@@ -663,7 +704,6 @@ void Enemy::ResolvePlayerCollision(XMVECTOR* ioPos, XMVECTOR* ioVel)
 
     // 　ノックバック処理（プレイヤーを押し出す）
     XMFLOAT3* playerVelPtr = Player_GetVelocityPtr();
-    XMFLOAT3 playerPosF = Player_GetPosition();
 
     // プレイヤーからエネミーへのベクトル（逆向き = 押し出し方向）
     XMVECTOR toEnemy = XMLoadFloat3(&m_Position) - XMLoadFloat3(&playerPosF);

@@ -349,6 +349,30 @@ MissileBullet::MissileBullet(const XMFLOAT3& pos, const XMFLOAT3& vel, int damag
 }
 
 //==============================================================================
+// ベジェ曲線飛行を有効化
+//==============================================================================
+void MissileBullet::EnableBezier(const XMFLOAT3& p0, const XMFLOAT3& p1,
+    const XMFLOAT3& p2, float duration, float exitSpeed)
+{
+    m_useBezier      = true;
+    m_p0             = p0;
+    m_p1             = p1;
+    m_p2             = p2;
+    m_bezierDuration = (duration > 0.01f) ? duration : 0.01f;
+    m_bezierElapsed  = 0.0f;
+    m_exitSpeed      = exitSpeed;
+
+    m_position     = p0;
+    m_prevPosition = p0;
+
+    // 初期進行方向 = t=0 の接線 2(P1-P0)
+    XMVECTOR tangent = XMLoadFloat3(&p1) - XMLoadFloat3(&p0);
+    if (XMVectorGetX(XMVector3LengthSq(tangent)) < 0.0001f)
+        tangent = XMLoadFloat3(&p2) - XMLoadFloat3(&p0);
+    XMStoreFloat3(&m_velocity, XMVector3Normalize(tangent) * exitSpeed);
+}
+
+//==============================================================================
 // 壁衝突チェック
 //
 // ■役割
@@ -385,10 +409,38 @@ void MissileBullet::Update(double elapsed_time)
 
     if (!m_destroyed)
     {
-        XMStoreFloat3(
-            &m_position,
-            XMLoadFloat3(&m_position) + XMLoadFloat3(&m_velocity) * static_cast<float>(elapsed_time)
-        );
+        if (m_useBezier)
+        {
+            m_bezierElapsed += static_cast<float>(elapsed_time);
+            float t = m_bezierElapsed / m_bezierDuration;
+            if (t >= 1.0f) t = 1.0f;
+
+            const XMVECTOR p0 = XMLoadFloat3(&m_p0);
+            const XMVECTOR p1 = XMLoadFloat3(&m_p1);
+            const XMVECTOR p2 = XMLoadFloat3(&m_p2);
+            const float    u  = 1.0f - t;
+
+            // 二次ベジェ B(t) = u^2 P0 + 2 u t P1 + t^2 P2
+            XMVECTOR pos = p0 * (u * u) + p1 * (2.0f * u * t) + p2 * (t * t);
+            XMStoreFloat3(&m_position, pos);
+
+            // 接線 B'(t) = 2u(P1-P0) + 2t(P2-P1) → 進行方向（GetFront/描画用）
+            XMVECTOR tangent = (p1 - p0) * (2.0f * u) + (p2 - p1) * (2.0f * t);
+            if (XMVectorGetX(XMVector3LengthSq(tangent)) > 0.0001f)
+                XMStoreFloat3(&m_velocity, XMVector3Normalize(tangent) * m_exitSpeed);
+
+            // 曲線の終わりに到達したら以降は直進モードへ切り替え
+            if (t >= 1.0f)
+                m_useBezier = false;
+        }
+        else
+        {
+            XMStoreFloat3(
+                &m_position,
+                XMLoadFloat3(&m_position) + XMLoadFloat3(&m_velocity) * static_cast<float>(elapsed_time)
+            );
+        }
+
         m_accumulatedTime += elapsed_time;
         CheckWallCollision();
     }
@@ -911,6 +963,15 @@ void BulletManager::CreateMissile(const XMFLOAT3& pos, const XMFLOAT3& vel, int 
     m_bullets[m_count++] = new MissileBullet(pos, vel, damage, radius);
 }
 
+void BulletManager::CreateMissileBezier(const XMFLOAT3& p0, const XMFLOAT3& p1,
+    const XMFLOAT3& p2, float duration, float exitSpeed, int damage, float radius)
+{
+    if (m_count >= MAX_BULLET) return;
+    MissileBullet* m = new MissileBullet(p0, { 0.0f, 0.0f, 0.0f }, damage, radius);
+    m->EnableBezier(p0, p1, p2, duration, exitSpeed);
+    m_bullets[m_count++] = m;
+}
+
 //==============================================================================
 // 爆発イベントをキューに追加
 //==============================================================================
@@ -953,6 +1014,12 @@ void BulletManager::ClearPendingExplosions()
 void Bullet_CreateMissile(const XMFLOAT3& pos, const XMFLOAT3& vel, int dmg, float radius)
 {
     GetManager().CreateMissile(pos, vel, dmg, radius);
+}
+
+void Bullet_CreateMissileBezier(const XMFLOAT3& p0, const XMFLOAT3& p1,
+    const XMFLOAT3& p2, float duration, float exitSpeed, int dmg, float radius)
+{
+    GetManager().CreateMissileBezier(p0, p1, p2, duration, exitSpeed, dmg, radius);
 }
 
 int Bullet_GetPendingExplosionCount()

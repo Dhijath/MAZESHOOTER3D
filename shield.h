@@ -34,6 +34,13 @@ void  Shield_Update(double dt, bool guarding);
 // �Ecenter : �V�[���h�̒��S���W�i�v���C���[���ӂ�j
 void  Shield_Draw(const DirectX::XMFLOAT3& center);
 
+// プレビュー用：任意の view/proj・中心・半径で球体シールドを描画する。
+// g_Active（ゲーム中のガード状態）に依存しない。アセンブリ/ショップ画面のプレビュー用。
+void  Shield_DrawAt(const DirectX::XMFLOAT3& center,
+                    const DirectX::XMFLOAT4X4& view,
+                    const DirectX::XMFLOAT4X4& proj,
+                    float radius);
+
 // �K�[�h����
 bool  Shield_IsActive();
 

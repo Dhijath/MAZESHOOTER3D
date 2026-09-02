@@ -447,9 +447,15 @@ void GameManager_Update(double elapsed_time)
             break; // ポーズ中はゲーム更新をスキップ
         }
 
-        Game_Update(elapsed_time);
-        WaveManager_Update(elapsed_time);
+        // ショップUIを開いている間はゲーム進行を凍結（ポーズ）する。
+        // Shop_Update だけは常に回し、カーソル移動・購入・閉じる操作を受け付ける。
         Shop_Update(elapsed_time);
+
+        if (!Shop_IsOpen())
+        {
+            Game_Update(elapsed_time);
+            WaveManager_Update(elapsed_time);
+        }
 
         // プレイヤー死亡
         if (!Player_IsEnable())
@@ -720,8 +726,8 @@ void GameManager_Draw()
     {
     case GameState::WeaponSelect:
         InputHint_Draw(
-            "{TAB} R/L ARM    {W}{S} Move    {ENTER} Quick Start    {ESC} Back",
-            "{LB}{RB} R/L ARM    {DPAD_UP}{DPAD_DN} Move    {A} Quick Start    {B} Back");
+            "{W}{S} Move    {ENTER} Set / Ready    {TAB} Jump    {ESC} Back",
+            "{DPAD_UP}{DPAD_DN} Move    {A} Set / Ready    {LB}{RB} Jump    {B} Back");
         break;
     case GameState::Title:
     {

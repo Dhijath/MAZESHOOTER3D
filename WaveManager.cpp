@@ -21,10 +21,10 @@ using namespace DirectX;
 
 namespace
 {
-    static constexpr int   MAX_WAVE        = 10;
+    static constexpr int   MAX_WAVE        = 5;
     static constexpr double WAVE_START_SEC  = 3.0;   // カウントダウン時間
     static constexpr double WAVE_CLEAR_SEC  = 2.0;   // クリア演出時間
-    static constexpr double SHOP_SEC        = 15.0;  // 購入タイム
+    static constexpr double SHOP_SEC        = 8.0;   // 購入タイム（ショップを開くとポーズするため短め）
 
     static int       g_Wave    = 0;
     static WavePhase g_Phase   = WavePhase::Idle;
@@ -41,6 +41,9 @@ namespace
     // EnemyType の int 値（EnemyManager.h と一致させる）
     enum : int { T_NORMAL=0, T_TANK=3, T_SPEED=2, T_SNIPER=3 };
     // ※ EnemyType: Normal=0, Tank=1, Speed=2, Sniper=3
+
+    // 5の倍数のウェーブ（5, 10）はボスウェーブ
+    static bool IsBossWave(int wave) { return (wave % 5) == 0; }
 
     static std::vector<SpawnEntry> CalcSpawnList(int wave)
     {
@@ -73,6 +76,9 @@ namespace
         return list;
     }
 
+    // EnemyType::Boss の int 値（EnemyManager.h: Normal=0,Tank=1,Speed=2,Sniper=3,Boss=4）
+    static constexpr int T_BOSS = 4;
+
     static void SpawnWaveEnemies(int wave)
     {
         const auto& spawns = Map_GetEnemySpawnPositions();
@@ -80,6 +86,17 @@ namespace
 
         std::mt19937 rng(static_cast<unsigned>(wave * 12345));
         std::uniform_int_distribution<int> pick(0, (int)spawns.size() - 1);
+
+        if (IsBossWave(wave))
+        {
+            // ボスウェーブ：ボス1体＋少数の取り巻き
+            Game_SpawnEnemy(spawns[pick(rng)], T_BOSS);
+
+            const int adds = 2 + wave / 5;   // wave5→3体, wave10→4体
+            for (int i = 0; i < adds; ++i)
+                Game_SpawnEnemy(spawns[pick(rng)], (i % 2 == 0) ? 0 /*Normal*/ : 2 /*Speed*/);
+            return;
+        }
 
         const auto list = CalcSpawnList(wave);
         for (const auto& e : list)
@@ -202,14 +219,31 @@ void WaveManager_Draw()
     switch (g_Phase)
     {
     case WavePhase::WaveStart:
-        snprintf(buf, sizeof(buf), "WAVE %d  START IN  %.0f", g_Wave, g_Timer + 1.0);
-        col = D2D1::ColorF(1.0f, 0.9f, 0.3f, 1.0f);
+        if (IsBossWave(g_Wave))
+        {
+            snprintf(buf, sizeof(buf), "BOSS WAVE %d  START IN  %.0f", g_Wave, g_Timer + 1.0);
+            col = D2D1::ColorF(1.0f, 0.3f, 0.3f, 1.0f);   // ボスは赤系で強調
+        }
+        else
+        {
+            snprintf(buf, sizeof(buf), "WAVE %d  START IN  %.0f", g_Wave, g_Timer + 1.0);
+            col = D2D1::ColorF(1.0f, 0.9f, 0.3f, 1.0f);
+        }
         break;
 
     case WavePhase::Fighting:
-        snprintf(buf, sizeof(buf), "WAVE  %d / %d      ENEMIES: %d",
-            g_Wave, MAX_WAVE, Game_GetAliveEnemyCount());
-        col = D2D1::ColorF(1, 1, 1, 0.85f);
+        if (IsBossWave(g_Wave))
+        {
+            snprintf(buf, sizeof(buf), "BOSS WAVE  %d / %d      ENEMIES: %d",
+                g_Wave, MAX_WAVE, Game_GetAliveEnemyCount());
+            col = D2D1::ColorF(1.0f, 0.4f, 0.4f, 0.9f);
+        }
+        else
+        {
+            snprintf(buf, sizeof(buf), "WAVE  %d / %d      ENEMIES: %d",
+                g_Wave, MAX_WAVE, Game_GetAliveEnemyCount());
+            col = D2D1::ColorF(1, 1, 1, 0.85f);
+        }
         break;
 
     case WavePhase::WaveCleared:

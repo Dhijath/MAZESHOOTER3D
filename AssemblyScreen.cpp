@@ -31,6 +31,7 @@
 #include "ModelToon.h"
 #include "ShaderToon.h"
 #include "ShaderEdge.h"
+#include "shield.h"
 #include "light.h"
 #include "UIInput.h"
 #include "keyboard.h"
@@ -60,11 +61,21 @@ static constexpr float RGT_X  = 980.0f,  RGT_W  = 620.0f;
 // 左パネル内レイアウト
 static constexpr float LP_RARM_Y       = 20.0f;
 static constexpr float LP_ITEM_START_R = 60.0f;
-static constexpr float LP_ITEM_H       = 40.0f;
-static constexpr float LP_ITEM_SPACING = 45.0f;
 static constexpr float LP_DIV_Y        = 248.0f;
 static constexpr float LP_LARM_Y       = 268.0f;
 static constexpr float LP_ITEM_START_L = 308.0f;
+
+// R-ARM リスト帯（LP_ITEM_START_R 〜 LP_DIV_Y）に WEAPON_COUNT 項目を均等配置する。
+// 武器が増減してもレイアウトが崩れないよう、項目間隔・高さを武器数から自動計算する。
+// （WEAPON_COUNT=4 のとき従来値 47/41 相当、5 で 37.6/31.6 に自動で詰まる）
+static constexpr float LP_ITEM_SPACING = (LP_DIV_Y - LP_ITEM_START_R) / (float)WEAPON_COUNT;
+static constexpr float LP_ITEM_H       = LP_ITEM_SPACING - 6.0f;
+
+// 準備完了（READY）ボタン：左パネル下部、下部ヒントバー（y≒862）の上に配置
+static constexpr float LP_READY_X = LEFT_X + 14.0f;
+static constexpr float LP_READY_Y = 792.0f;
+static constexpr float LP_READY_W = LEFT_W - 28.0f;
+static constexpr float LP_READY_H = 54.0f;
 
 // センターパネル内レイアウト
 static constexpr float CP_NAME_Y       = 60.0f;
@@ -89,12 +100,28 @@ static constexpr float RP_CREDIT_Y     = 760.0f;
 //==============================================================================
 namespace
 {
-    // 0=R-ARM, 1=L-ARM
-    int g_ActivePanel = 0;
+    // アクティブパネル（g_Focus から導出される）
+    enum { PANEL_RARM = 0, PANEL_LARM = 1, PANEL_READY = 2, PANEL_COUNT = 3 };
+    int g_ActivePanel = PANEL_RARM;
 
-    // 各パネルのカーソル位置（WeaponID に対応）
+    // グローバル縦カーソル：[R武器 0..N-1][L武器 0..N-1][READY] を通した1本の縦リスト。
+    // 上下キーで移動し端でループする。TAB は各パネル先頭へジャンプ。
+    //   0 .. N-1        : R-ARM 武器
+    //   N .. 2N-1       : L-ARM 武器
+    //   2N              : READY ボタン
+    int g_Focus = 0;
+
+    // 各アームのカーソル位置（ホバー中の候補。WeaponID に対応。g_Focus と同期）
     int g_RightCursor = WEAPON_MACHINEGUN;
     int g_LeftCursor  = WEAPON_SHIELD;
+
+    // 各アームの確定武器（A で確定。装備されるのはこちら）
+    int g_RightSelected = WEAPON_MACHINEGUN;
+    int g_LeftSelected  = WEAPON_SHIELD;
+
+    // ショップモード（サバイバルのショップから流用する際に true）
+    bool g_ShopMode   = false;
+    int  g_ShopBudget = 0;      // 使用可能クレジット
 
     // 前回選択のデフォルト値（SaveData_Load から上書きされる）
     int g_DefaultRight = WEAPON_MACHINEGUN;
@@ -136,12 +163,41 @@ namespace
 // 内部ヘルパー
 //==============================================================================
 
-// 残クレジット計算
+// 残クレジット計算（確定済みの装備武器で計算する）
 static int CalcRemaining()
 {
+    if (g_ShopMode)
+    {
+        // ショップ：装備中（初期値）から変更したアームぶんだけ課金する差分方式。
+        // 現状維持は無料、武器を替えたアームだけそのコストを支払う。
+        int spent = 0;
+        if (g_RightSelected != g_DefaultRight) spent += k_WeaponDefs[g_RightSelected].cost;
+        if (g_LeftSelected  != g_DefaultLeft)  spent += k_WeaponDefs[g_LeftSelected].cost;
+        return g_ShopBudget - spent;
+    }
+
     return INITIAL_CREDITS
-         - k_WeaponDefs[g_RightCursor].cost
-         - k_WeaponDefs[g_LeftCursor].cost;
+         - k_WeaponDefs[g_RightSelected].cost
+         - k_WeaponDefs[g_LeftSelected].cost;
+}
+
+// グローバル縦カーソル g_Focus から アクティブパネルとホバーカーソルを更新する
+static void ApplyFocus()
+{
+    if (g_Focus < WEAPON_COUNT)
+    {
+        g_ActivePanel = PANEL_RARM;
+        g_RightCursor = g_Focus;
+    }
+    else if (g_Focus < 2 * WEAPON_COUNT)
+    {
+        g_ActivePanel = PANEL_LARM;
+        g_LeftCursor  = g_Focus - WEAPON_COUNT;
+    }
+    else
+    {
+        g_ActivePanel = PANEL_READY;
+    }
 }
 
 // Sprite カラー定数
@@ -158,12 +214,16 @@ static constexpr XMFLOAT4 kDivider    = { 0.25f, 0.50f, 0.90f, 0.50f };
 //==============================================================================
 void AssemblyScreen_Initialize()
 {
-    g_ActivePanel  = 0;
-    g_RightCursor  = g_DefaultRight;   // 前回選択を引き継ぐ
-    g_LeftCursor   = g_DefaultLeft;
-    g_Decided      = false;
-    g_Cancelled    = false;
-    g_Time         = 0.0;
+    g_RightCursor   = g_DefaultRight;   // 前回選択を引き継ぐ（ホバー初期位置）
+    g_LeftCursor    = g_DefaultLeft;
+    g_RightSelected = g_DefaultRight;   // 確定武器も前回選択で初期化
+    g_LeftSelected  = g_DefaultLeft;
+    g_Focus         = g_DefaultRight;   // R-ARM の前回武器にフォーカス
+    ApplyFocus();                       // g_ActivePanel / カーソルを同期
+    g_ShopMode      = false;            // 既定は通常モード（ショップは Initialize 後に SetShopMode する）
+    g_Decided       = false;
+    g_Cancelled     = false;
+    g_Time          = 0.0;
 
     if (g_SeCursorMove < 0) g_SeCursorMove = LoadAudioWithVolume("resource/Sound/ui_cursor_move.wav", 0.5f);
     if (g_SeSelect     < 0) g_SeSelect     = LoadAudioWithVolume("resource/Sound/ui_select.wav", 0.5f);
@@ -253,45 +313,65 @@ bool AssemblyScreen_Update(double dt)
     g_Time += dt;
     g_PreviewAngle += static_cast<float>(dt) * 0.8f;  // プレビュー自動回転
 
-    // パネル切り替え（TAB = R-ARM ↔ L-ARM トグル）
-    {
-        // TAB / LB / RB：R-ARM ↔ L-ARM トグル
-        if (UI_IsTabSwitch())
-        { g_ActivePanel = 1 - g_ActivePanel; PlayAudio(g_SeTabSwitch, false); }
+    constexpr int FOCUS_READY = 2 * WEAPON_COUNT;      // READY のフォーカス位置
+    constexpr int FOCUS_TOTAL = 2 * WEAPON_COUNT + 1;  // 全フォーカス項目数
 
-        // ENTER / パッドA / 左クリック で決定
-        if (UI_IsConfirm())
+    // ── TAB / LB / RB：次のパネルへジャンプ（R-ARM → L-ARM → READY 循環）──
+    // 武器パネルへ移る際は先頭ではなく、そのアームの選択中（確定）武器にフォーカスする
+    if (UI_IsTabSwitch())
+    {
+        if      (g_ActivePanel == PANEL_RARM) g_Focus = WEAPON_COUNT + g_LeftSelected; // L-ARM 選択武器
+        else if (g_ActivePanel == PANEL_LARM) g_Focus = FOCUS_READY;                   // READY
+        else                                  g_Focus = g_RightSelected;               // R-ARM 選択武器
+        ApplyFocus();
+        PlayAudio(g_SeTabSwitch, false);
+    }
+
+    // ── 上下：全項目を通した縦移動（端でループ：一番下→一番上）──
+    if (UI_IsMoveDown())
+    {
+        g_Focus = (g_Focus + 1) % FOCUS_TOTAL;
+        ApplyFocus();
+        PlayAudio(g_SeCursorMove, false);
+    }
+    if (UI_IsMoveUp())
+    {
+        g_Focus = (g_Focus + FOCUS_TOTAL - 1) % FOCUS_TOTAL;
+        ApplyFocus();
+        PlayAudio(g_SeCursorMove, false);
+    }
+
+    // ── ESC / パッドB でキャンセル（前の画面へ戻る）──
+    if (UI_IsCancel())
+    {
+        PlayAudio(g_SeCancel, false);
+        g_Cancelled = true;
+        return true;
+    }
+
+    // ── 決定入力：ENTER / パッドA / 左クリック ──
+    //（キーボード A は本来「左移動」なので決定には割り当てない）
+    const bool confirm = UI_IsConfirm();
+    if (confirm)
+    {
+        if (g_ActivePanel == PANEL_READY)
         {
+            // READY：予算内ならゲーム開始
             if (CalcRemaining() >= 0)
             {
                 PlayAudio(g_SeSelect, false);
                 g_Decided = true;
                 return true;
             }
+            PlayAudio(g_SeCancel, false);   // 予算超過中は開始できない
         }
-
-        // ESC / パッドB でキャンセル（前の画面へ戻る）
-        if (UI_IsCancel())
+        else
         {
-            PlayAudio(g_SeCancel, false);
-            g_Cancelled = true;
-            return true;
+            // R/L-ARM：ホバー中の武器をこのアームに確定する（装備に反映）
+            if (g_ActivePanel == PANEL_RARM) g_RightSelected = g_RightCursor;
+            else                             g_LeftSelected  = g_LeftCursor;
+            PlayAudio(g_SeSelect, false);
         }
-    }
-
-    // カーソル移動（上下）
-    const bool up   = UI_IsMoveUp();
-    const bool down = UI_IsMoveDown();
-
-    if (g_ActivePanel == 0)
-    {
-        if (up)   { g_RightCursor = (g_RightCursor + WEAPON_COUNT - 1) % WEAPON_COUNT; PlayAudio(g_SeCursorMove, false); }
-        if (down) { g_RightCursor = (g_RightCursor + 1)                % WEAPON_COUNT; PlayAudio(g_SeCursorMove, false); }
-    }
-    else
-    {
-        if (up)   { g_LeftCursor = (g_LeftCursor + WEAPON_COUNT - 1) % WEAPON_COUNT; PlayAudio(g_SeCursorMove, false); }
-        if (down) { g_LeftCursor = (g_LeftCursor + 1)                % WEAPON_COUNT; PlayAudio(g_SeCursorMove, false); }
     }
 
     return false;
@@ -338,34 +418,71 @@ void AssemblyScreen_Draw()
     Sprite_Draw(g_WhiteTexID, RGT_X+10, RP_CREDIT_Y-20.0f, RGT_W-20, 1.0f, kDivider);
 
     //--------------------------------------------------------------------------
-    // アクティブパネル強調
+    // アクティブパネル強調（R/L-ARM ラベルバー。READY 時はどちらも光らせない）
     //--------------------------------------------------------------------------
-    if (g_ActivePanel == 0)
+    if (g_ActivePanel == PANEL_RARM)
         Sprite_Draw(g_WhiteTexID, LEFT_X, LP_RARM_Y - 4.0f, LEFT_W, 32.0f, kSelBg);
-    else
+    else if (g_ActivePanel == PANEL_LARM)
         Sprite_Draw(g_WhiteTexID, LEFT_X, LP_LARM_Y - 4.0f, LEFT_W, 32.0f, kSelBg);
 
-    // 選択アイテム背景
-    for (int i = 0; i < WEAPON_COUNT; ++i)
+    // 確定武器の背景（常時・淡色）＋ ホバーカーソル背景（アクティブパネルのみ・明色）
     {
-        if (g_ActivePanel == 0 && i == g_RightCursor)
+        const XMFLOAT4 kSelDim = { 0.12f, 0.28f, 0.55f, 0.45f };  // 確定表示（淡）
+        const float bob = sinf(static_cast<float>(g_Time) * 5.5f) * 2.0f;
+
+        for (int i = 0; i < WEAPON_COUNT; ++i)
         {
-            const float bob = sinf(static_cast<float>(g_Time) * 5.5f) * 2.0f;
-            const float ry  = LP_ITEM_START_R + i * LP_ITEM_SPACING;
-            Sprite_Draw(g_WhiteTexID, LEFT_X+2, ry+bob, LEFT_W-4, LP_ITEM_H, kSelBg);
+            const float ry = LP_ITEM_START_R + i * LP_ITEM_SPACING;
+            const float ly = LP_ITEM_START_L + i * LP_ITEM_SPACING;
+
+            // 確定済み武器（淡色・常時）
+            if (i == g_RightSelected)
+                Sprite_Draw(g_WhiteTexID, LEFT_X+2, ry, LEFT_W-4, LP_ITEM_H, kSelDim);
+            if (i == g_LeftSelected)
+                Sprite_Draw(g_WhiteTexID, LEFT_X+2, ly, LEFT_W-4, LP_ITEM_H, kSelDim);
+
+            // ホバーカーソル（アクティブパネルのみ・明色・上下に揺れる）
+            if (g_ActivePanel == PANEL_RARM && i == g_RightCursor)
+                Sprite_Draw(g_WhiteTexID, LEFT_X+2, ry+bob, LEFT_W-4, LP_ITEM_H, kSelBg);
+            if (g_ActivePanel == PANEL_LARM && i == g_LeftCursor)
+                Sprite_Draw(g_WhiteTexID, LEFT_X+2, ly+bob, LEFT_W-4, LP_ITEM_H, kSelBg);
         }
-        if (g_ActivePanel == 1 && i == g_LeftCursor)
-        {
-            const float bob = sinf(static_cast<float>(g_Time) * 5.5f) * 2.0f;
-            const float ly  = LP_ITEM_START_L + i * LP_ITEM_SPACING;
-            Sprite_Draw(g_WhiteTexID, LEFT_X+2, ly+bob, LEFT_W-4, LP_ITEM_H, kSelBg);
-        }
+    }
+
+    //--------------------------------------------------------------------------
+    // 準備完了（READY）ボタン ─ 予算内なら緑パルス、超過なら赤で無効表現
+    //--------------------------------------------------------------------------
+    {
+        const bool  ready   = (CalcRemaining() >= 0);
+        const bool  focused = (g_ActivePanel == PANEL_READY);
+        const float pulse   = 0.5f + 0.5f * sinf(static_cast<float>(g_Time) * 4.0f);
+
+        // フォーカス時は明るく（パルス強め）、非フォーカス時は控えめ
+        const float fillA = focused ? (0.55f + 0.40f * pulse) : 0.35f;
+        const XMFLOAT4 fill = ready
+            ? XMFLOAT4{ 0.10f, 0.55f, 0.25f, fillA }
+            : XMFLOAT4{ 0.40f, 0.10f, 0.10f, focused ? 0.80f : 0.55f };
+        const XMFLOAT4 edge = ready
+            ? XMFLOAT4{ 0.35f, 1.00f, 0.55f, focused ? 1.00f : 0.60f }
+            : XMFLOAT4{ 1.00f, 0.35f, 0.35f, focused ? 0.95f : 0.60f };
+
+        // フォーカス時は枠を太く（2px→3px）
+        const float bw = focused ? 3.0f : 2.0f;
+
+        // 本体
+        Sprite_Draw(g_WhiteTexID, LP_READY_X, LP_READY_Y, LP_READY_W, LP_READY_H, fill);
+        // 枠（上下左右）
+        Sprite_Draw(g_WhiteTexID, LP_READY_X, LP_READY_Y,                 LP_READY_W, bw,         edge);
+        Sprite_Draw(g_WhiteTexID, LP_READY_X, LP_READY_Y + LP_READY_H-bw, LP_READY_W, bw,         edge);
+        Sprite_Draw(g_WhiteTexID, LP_READY_X, LP_READY_Y,                 bw,         LP_READY_H, edge);
+        Sprite_Draw(g_WhiteTexID, LP_READY_X + LP_READY_W-bw, LP_READY_Y, bw,         LP_READY_H, edge);
     }
 
     //--------------------------------------------------------------------------
     // (2) ステータスバー
     //--------------------------------------------------------------------------
-    const int hoverId = (g_ActivePanel == 0) ? g_RightCursor : g_LeftCursor;
+    // 中央の詳細プレビューはホバー中の候補武器を表示する
+    const int hoverId = (g_ActivePanel == PANEL_LARM) ? g_LeftCursor : g_RightCursor;
     const WeaponDef& wd = k_WeaponDefs[hoverId];
 
     const float bars[3] = { wd.dmgBar, wd.rateBar, wd.expBar };
@@ -547,10 +664,11 @@ void AssemblyScreen_Draw()
             return localRot * aimRot * XMMatrixTranslation(posF3.x, posF3.y, posF3.z);
         };
 
-        const XMMATRIX rWeaponWorld = makeWeaponWorld(k_WeaponDefs[g_RightCursor], +1.0f);
-        const XMMATRIX lWeaponWorld = makeWeaponWorld(k_WeaponDefs[g_LeftCursor],  -1.0f);
-        MODEL* rWeaponModel = g_pPreviewModels[g_RightCursor];
-        MODEL* lWeaponModel = g_pPreviewModels[g_LeftCursor];
+        // プレイヤー人形には確定済み（装備）の武器を表示する
+        const XMMATRIX rWeaponWorld = makeWeaponWorld(k_WeaponDefs[g_RightSelected], +1.0f);
+        const XMMATRIX lWeaponWorld = makeWeaponWorld(k_WeaponDefs[g_LeftSelected],  -1.0f);
+        MODEL* rWeaponModel = g_pPreviewModels[g_RightSelected];
+        MODEL* lWeaponModel = g_pPreviewModels[g_LeftSelected];
 
         const float ppScaleX = (float)Direct3D_GetBackBufferWidth()  / SW;
         const float ppScaleY = (float)Direct3D_GetBackBufferHeight() / SH;
@@ -587,6 +705,28 @@ void AssemblyScreen_Draw()
         ModelDrawToon(g_pPlayerPreviewThruster, thrusterWorld);
         if (rWeaponModel) ModelDrawToon(rWeaponModel, rWeaponWorld);
         if (lWeaponModel) ModelDrawToon(lWeaponModel, lWeaponWorld);
+
+        // ── ショップモードのみ：胴体をシールドの球体で包む ──
+        if (g_ShopMode)
+        {
+            // 胴体（body）の中心と、それを包む半径を AABB から算出
+            const float bcy = (bodyAABB.min.y + bodyAABB.max.y) * 0.5f;
+            float ext = bodyAABB.max.x - bodyAABB.min.x;
+            const float ey = bodyAABB.max.y - bodyAABB.min.y;
+            const float ez = bodyAABB.max.z - bodyAABB.min.z;
+            if (ey > ext) ext = ey;
+            if (ez > ext) ext = ez;
+
+            const XMFLOAT3 sphereCenter = { 0.0f, bcy, 0.0f };
+            const float    sphereRadius = ext * 0.75f;
+
+            XMFLOAT4X4 ppViewF, ppProjF;
+            XMStoreFloat4x4(&ppViewF, ppView);
+            XMStoreFloat4x4(&ppProjF, ppProj);
+
+            setPlayerVP();  // プレビュー用ビューポートを再設定してから描画
+            Shield_DrawAt(sphereCenter, ppViewF, ppProjF, sphereRadius);
+        }
 
         // エッジ合成（フルVP復元してから DrawEdge）
         {
@@ -629,7 +769,7 @@ void AssemblyScreen_Draw()
             FontData fd;
             fd.font = Font::Arial; fd.fontSize = 18.0f;
             fd.fontWeight = DWRITE_FONT_WEIGHT_BOLD;
-            fd.Color = (g_ActivePanel == 0)
+            fd.Color = (g_ActivePanel == PANEL_RARM)
                 ? D2D1::ColorF(0.4f, 0.85f, 1.0f, 1.0f)
                 : D2D1::ColorF(0.7f, 0.7f, 0.7f, 1.0f);
             g_pDWBody->SetFont(&fd);
@@ -639,14 +779,18 @@ void AssemblyScreen_Draw()
 
         for (int i = 0; i < WEAPON_COUNT; ++i)
         {
-            const float iy  = LP_ITEM_START_R + i * LP_ITEM_SPACING + 10.0f;
-            const bool  sel = (g_ActivePanel == 0 && i == g_RightCursor);
+            const float iy   = LP_ITEM_START_R + i * LP_ITEM_SPACING + 10.0f;
+            const bool  cur  = (g_ActivePanel == PANEL_RARM && i == g_RightCursor); // ホバー中
+            const bool  eqp  = (i == g_RightSelected);                              // 確定・装備中
             FontData fd;
             fd.font = Font::Arial; fd.fontSize = 18.0f;
-            fd.fontWeight = sel ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL;
-            fd.Color = sel ? D2D1::ColorF(1,1,1,1) : D2D1::ColorF(0.6f,0.6f,0.6f,1);
+            fd.fontWeight = (cur || eqp) ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL;
+            fd.Color = cur ? D2D1::ColorF(1,1,1,1)
+                     : eqp ? D2D1::ColorF(0.55f, 1.0f, 0.65f, 1.0f)   // 確定＝緑
+                           : D2D1::ColorF(0.6f, 0.6f, 0.6f, 1.0f);
             g_pDWBody->SetFont(&fd);
-            const std::string lbl = std::string(sel ? "> " : "  ") + k_WeaponDefs[i].name;
+            const char* mark = cur ? "> " : (eqp ? "* " : "  ");
+            const std::string lbl = std::string(mark) + k_WeaponDefs[i].name;
             g_pDWBody->DrawString(lbl, LEFT_X + 10.0f, iy, D2D1_DRAW_TEXT_OPTIONS_NONE);
         }
 
@@ -655,7 +799,7 @@ void AssemblyScreen_Draw()
             FontData fd;
             fd.font = Font::Arial; fd.fontSize = 18.0f;
             fd.fontWeight = DWRITE_FONT_WEIGHT_BOLD;
-            fd.Color = (g_ActivePanel == 1)
+            fd.Color = (g_ActivePanel == PANEL_LARM)
                 ? D2D1::ColorF(0.4f, 0.85f, 1.0f, 1.0f)
                 : D2D1::ColorF(0.7f, 0.7f, 0.7f, 1.0f);
             g_pDWBody->SetFont(&fd);
@@ -665,16 +809,33 @@ void AssemblyScreen_Draw()
 
         for (int i = 0; i < WEAPON_COUNT; ++i)
         {
-            const float iy  = LP_ITEM_START_L + i * LP_ITEM_SPACING + 10.0f;
-            const bool  sel = (g_ActivePanel == 1 && i == g_LeftCursor);
+            const float iy   = LP_ITEM_START_L + i * LP_ITEM_SPACING + 10.0f;
+            const bool  cur  = (g_ActivePanel == PANEL_LARM && i == g_LeftCursor); // ホバー中
+            const bool  eqp  = (i == g_LeftSelected);                             // 確定・装備中
             FontData fd;
             fd.font = Font::Arial; fd.fontSize = 18.0f;
-            fd.fontWeight = sel ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL;
-            fd.Color = sel ? D2D1::ColorF(1,1,1,1) : D2D1::ColorF(0.6f,0.6f,0.6f,1);
+            fd.fontWeight = (cur || eqp) ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL;
+            fd.Color = cur ? D2D1::ColorF(1,1,1,1)
+                     : eqp ? D2D1::ColorF(0.55f, 1.0f, 0.65f, 1.0f)   // 確定＝緑
+                           : D2D1::ColorF(0.6f, 0.6f, 0.6f, 1.0f);
             g_pDWBody->SetFont(&fd);
-            const std::string lbl = std::string(sel ? "> " : "  ") + k_WeaponDefs[i].name;
+            const char* mark = cur ? "> " : (eqp ? "* " : "  ");
+            const std::string lbl = std::string(mark) + k_WeaponDefs[i].name;
             g_pDWBody->DrawString(lbl, LEFT_X + 10.0f, iy, D2D1_DRAW_TEXT_OPTIONS_NONE);
         }
+
+        // ── 準備完了（READY）ボタンのラベル ───────────────────
+        {
+            const bool ready = (CalcRemaining() >= 0);
+            FontData fd;
+            fd.font = Font::Arial; fd.fontSize = 26.0f;
+            fd.fontWeight = DWRITE_FONT_WEIGHT_BOLD;
+            fd.Color = ready ? D2D1::ColorF(0.90f, 1.0f, 0.92f, 1.0f)
+                             : D2D1::ColorF(1.0f, 0.70f, 0.70f, 1.0f);
+            g_pDWLarge->SetFont(&fd);
+        }
+        g_pDWLarge->DrawString("READY",
+            LP_READY_X + 80.0f, LP_READY_Y + 12.0f, D2D1_DRAW_TEXT_OPTIONS_NONE);
 
         // ── センターパネル ─────────────────────────────────
         {
@@ -752,9 +913,9 @@ void AssemblyScreen_Draw()
             fd.Color = D2D1::ColorF(0.7f, 0.9f, 1.0f, 1.0f);
             g_pDWBody->SetFont(&fd);
         }
-        snprintf(buf, sizeof(buf), "R-ARM : %s", k_WeaponDefs[g_RightCursor].name);
+        snprintf(buf, sizeof(buf), "R-ARM : %s", k_WeaponDefs[g_RightSelected].name);
         g_pDWBody->DrawString(buf, RGT_X + 20.0f, 680.0f, D2D1_DRAW_TEXT_OPTIONS_NONE);
-        snprintf(buf, sizeof(buf), "L-ARM : %s", k_WeaponDefs[g_LeftCursor].name);
+        snprintf(buf, sizeof(buf), "L-ARM : %s", k_WeaponDefs[g_LeftSelected].name);
         g_pDWBody->DrawString(buf, RGT_X + 20.0f, 710.0f, D2D1_DRAW_TEXT_OPTIONS_NONE);
 
         const int  remaining  = CalcRemaining();
@@ -796,17 +957,28 @@ void AssemblyScreen_Draw()
 //==============================================================================
 // Getter
 //==============================================================================
-WeaponID AssemblyScreen_GetRightWeapon()     { return static_cast<WeaponID>(g_RightCursor); }
-WeaponID AssemblyScreen_GetLeftWeapon()      { return static_cast<WeaponID>(g_LeftCursor);  }
+WeaponID AssemblyScreen_GetRightWeapon()     { return static_cast<WeaponID>(g_RightSelected); }
+WeaponID AssemblyScreen_GetLeftWeapon()      { return static_cast<WeaponID>(g_LeftSelected);  }
 int      AssemblyScreen_GetRemainingCredits(){ return CalcRemaining(); }
 bool     AssemblyScreen_WasCancelled()       { return g_Cancelled; }
+
+void AssemblyScreen_SetShopMode(bool on, int budget)
+{
+    g_ShopMode   = on;
+    g_ShopBudget = budget;
+}
+
+bool AssemblyScreen_IsShopMode() { return g_ShopMode; }
 
 void AssemblyScreen_SetDefaults(WeaponID right, WeaponID left)
 {
     g_DefaultRight = static_cast<int>(right);
     g_DefaultLeft  = static_cast<int>(left);
 
-    // カーソルも即時更新（Initialize() が呼ばれない QuickStart でも正しい値を返せるように）
-    g_RightCursor = g_DefaultRight;
-    g_LeftCursor  = g_DefaultLeft;
+    // カーソル・確定武器も即時更新
+    //（Initialize() が呼ばれない QuickStart でも正しい値を返せるように）
+    g_RightCursor   = g_DefaultRight;
+    g_LeftCursor    = g_DefaultLeft;
+    g_RightSelected = g_DefaultRight;
+    g_LeftSelected  = g_DefaultLeft;
 }

@@ -58,4 +58,13 @@ const WeaponDef k_WeaponDefs[WEAPON_COUNT] =
         0.00f,  0.00f,  0.00f,
         L"ボタン長押しでガード、被ダメージ50%軽減。\n両腕装備時は両ボタン同時押しでビーム発射。"
     },
+
+    /* WEAPON_MULTIMISSILE  実値: damage=90/発 ×5発  interval=1.20s  explosionR=6.0 */
+    {
+        "MULTI MISSILE", 90,   1.20f,  6.0f, 150000,
+        "resource/Models/Weapon_Missile_pod.fbx",  0.15f,
+        180.0f, -30.0f, 0.0f,  0.30f, 0.30f, 0.0f,
+        0.23f,  0.08f,  0.80f,    // dmg=90/385≈0.23  rate≈0.09/1.20≈0.08  exp=6.0/7.5=0.80
+        L"5発のミサイルをベジェ曲線で扇状に発射する。\n弧を描いて拡散し標的へ収束、複数の敵を巻き込む。"
+    },
 };

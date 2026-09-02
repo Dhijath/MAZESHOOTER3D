@@ -425,6 +425,10 @@ void HUD_Initialize()
         fdSmall.Color         = D2D1::ColorF(1.0f, 1.0f, 1.0f, 1.0f);
         s_pDW_Small = new DirectWrite(&fdSmall);
         s_pDW_Small->Init();
+        // 小フォントは単一行ラベル専用（ARM名・武器名・ATK等）。
+        // 「MULTI MISSILE」のような長い武器名が2行に折り返して
+        // 下段の ATK 表示に被るのを防ぐため、折り返しを無効化する。
+        s_pDW_Small->SetWordWrapping(false);
     }
 
     // GAME OVER テキスト用
@@ -1287,7 +1291,7 @@ void HUD_DrawGameOver(float alpha)
     // 縁取り付きで視認性確保
     const D2D1_COLOR_F col = D2D1::ColorF(1.0f, 0.10f, 0.10f, alpha);
     s_pDW_GameOver->DrawAt(
-        std::wstring(L"損傷甚大"),
+        std::wstring(L"Warning"),
         SW * 0.5f, SH * 0.5f,
         SW * 0.5f - 20.0f,
         col,

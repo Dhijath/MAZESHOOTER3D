@@ -288,6 +288,23 @@ public:
     MissileBullet(const DirectX::XMFLOAT3& pos, const DirectX::XMFLOAT3& vel,
         int damage, float explosionRadius);
 
+    //==========================================================================
+    // ベジェ曲線飛行を有効化（マルチミサイル用）
+    //
+    // ■役割
+    // ・二次ベジェ曲線 P0→(P1)→P2 に沿って飛翔させる
+    // ・duration 秒かけて t:0→1 まで進み、到達後は最終接線方向へ直進する
+    //
+    // ■引数
+    // ・p0        : 始点（発射位置）
+    // ・p1        : 制御点（曲がり具合を決める）
+    // ・p2        : 終点（標的位置）
+    // ・duration  : 曲線を飛び切るまでの時間（秒）
+    // ・exitSpeed : 曲線到達後に直進する速度
+    //==========================================================================
+    void EnableBezier(const DirectX::XMFLOAT3& p0, const DirectX::XMFLOAT3& p1,
+        const DirectX::XMFLOAT3& p2, float duration, float exitSpeed);
+
     void                      Update(double elapsed_time) override;
     bool                      IsDestroyed()    const override;
     BulletType                GetType()        const override { return BulletType::Missile; }
@@ -309,6 +326,15 @@ private:
     bool               m_destroyed{ false };
     int                m_damage{ 0 };
     float              m_explosionRadius{ 0.0f };
+
+    //--------------------------------------------------------------------------
+    // ベジェ曲線飛行（マルチミサイル用）
+    //--------------------------------------------------------------------------
+    bool               m_useBezier{ false };
+    DirectX::XMFLOAT3  m_p0{}, m_p1{}, m_p2{};  // 始点 / 制御点 / 終点
+    float              m_bezierDuration{ 1.0f };
+    float              m_bezierElapsed{ 0.0f };
+    float              m_exitSpeed{ 28.0f };     // 曲線到達後の直進速度
 
     static constexpr double LIFE_TIME = 3.0;   // 寿命（秒）
     static constexpr float  MISSILE_SIZE = 0.15f; // 壁衝突判定の半幅
@@ -410,6 +436,12 @@ public:
     // ・radius   : 爆発半径
     //==========================================================================
     void CreateMissile(const DirectX::XMFLOAT3& position, const DirectX::XMFLOAT3& velocity, int damage, float radius);
+
+    //==========================================================================
+    // ベジェ曲線ミサイル生成（マルチミサイル用）
+    //==========================================================================
+    void CreateMissileBezier(const DirectX::XMFLOAT3& p0, const DirectX::XMFLOAT3& p1,
+        const DirectX::XMFLOAT3& p2, float duration, float exitSpeed, int damage, float radius);
 
     //==========================================================================
     // 未処理の爆発イベント数を返す
@@ -695,6 +727,21 @@ bool Bullet_IsBeam(int index);
 // ・radius   : 爆発半径
 //==============================================================================
 void Bullet_CreateMissile(const DirectX::XMFLOAT3& position, const DirectX::XMFLOAT3& velocity, int damage, float radius);
+
+//==============================================================================
+// ベジェ曲線ミサイルを生成（マルチミサイル用）
+//
+// ■引数
+// ・p0        : 始点（発射位置）
+// ・p1        : 制御点（曲がり具合を決める）
+// ・p2        : 終点（標的位置）
+// ・duration  : 曲線を飛び切るまでの時間（秒）
+// ・exitSpeed : 曲線到達後に直進する速度
+// ・damage    : 爆発ダメージ量
+// ・radius    : 爆発半径
+//==============================================================================
+void Bullet_CreateMissileBezier(const DirectX::XMFLOAT3& p0, const DirectX::XMFLOAT3& p1,
+    const DirectX::XMFLOAT3& p2, float duration, float exitSpeed, int damage, float radius);
 
 //==============================================================================
 // 未処理の爆発イベント数を返す
