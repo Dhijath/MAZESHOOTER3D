@@ -34,7 +34,13 @@ namespace
     static XMFLOAT3 g_Pos       = {};
     static bool     g_IsOpen    = false;
     static int      g_ShopBudget = 0;   // ショップを開いた時点の所持金（購入額算出用）
+    // ショップは事前アセンブリ画面と同じ選択状態を共有するため、開く前の
+    // 事前アセンブリのロードアウトを退避し、閉じる時に復元する。
+    // （復元しないと SaveData がショップの購入内容を「前回のアセンブリ設定」として保存してしまう）
+    static int      g_PreShopR  = 0;
+    static int      g_PreShopL  = 3;
     static int      g_TexShop = -1;
+    static int      g_TexFont = -1;         // 「SHOP」表示用フォントアトラス（16x16グリッド）
 
     static MODEL*   g_pBodyModel = nullptr; // フィールド目印用ボディモデル（body.fbx）
     static double   g_AnimTime   = 0.0;     // 目印の浮遊・回転アニメ用の経過時間
@@ -44,7 +50,7 @@ namespace
     static int      g_SeSelect = -1;
     static int      g_SeError  = -1;
 
-    static constexpr float INTERACT_DIST = 4.0f; // インタラクト可能距離
+    static constexpr float INTERACT_DIST = 5.5f; // インタラクト可能距離（目印を大きくしたので広め）
 
     // DirectWrite 生成時の基準フォントサイズ。
     // 実際の描画サイズは DrawTextFit が枠サイズ比から拡縮するため、
@@ -89,10 +95,11 @@ void Shop_Initialize(const XMFLOAT3& pos)
 
     g_TexShop  = Texture_Load(L"resource/texture/white.png"); // TODO: 専用テクスチャ
     g_WhiteTex = Texture_Load(L"resource/texture/white.png");
+    g_TexFont  = Texture_Load(L"Resource/Texture/consolab_ascii_512.png"); // 「SHOP」文字用
 
     // フィールド目印用ボディモデル（プレイヤーと同じ body.fbx を流用）
     if (!g_pBodyModel)
-        g_pBodyModel = ModelLoad("resource/Models/body.fbx", 0.3f);
+        g_pBodyModel = ModelLoad("resource/Models/body.fbx", 0.6f);  // フィールド目印は大きめに
     g_AnimTime = 0.0;
 
     if (g_SeOpen   < 0) g_SeOpen   = LoadAudio("resource/Sound/ui_select.wav");
@@ -162,6 +169,10 @@ void Shop_Update(double elapsed_time)
         const bool inRange = (DistToPlayer() <= INTERACT_DIST);
         if (inRange && (KeyLogger_IsTrigger(KK_E) || PadLogger_IsTrigger(PAD_A)))
         {
+            // 事前アセンブリのロードアウトを退避（閉じる時に復元してセーブ汚染を防ぐ）
+            g_PreShopR = static_cast<int>(AssemblyScreen_GetRightWeapon());
+            g_PreShopL = static_cast<int>(AssemblyScreen_GetLeftWeapon());
+
             // 装備中の武器を初期値、所持金を予算にしてショップモードで開く
             AssemblyScreen_SetDefaults(
                 static_cast<WeaponID>(Player_GetRightWeaponIndex()),
@@ -192,6 +203,11 @@ void Shop_Update(double elapsed_time)
         }
 
         AssemblyScreen_Finalize();
+        AssemblyScreen_SetShopMode(false, 0);
+        // 事前アセンブリのロードアウトを復元（ショップの購入内容をセーブに残さない）。
+        // 購入はすでに Player 側へ適用済みなので、この復元は装備に影響しない。
+        AssemblyScreen_SetDefaults(static_cast<WeaponID>(g_PreShopR),
+                                   static_cast<WeaponID>(g_PreShopL));
         g_IsOpen = false;
     }
 }
@@ -213,9 +229,9 @@ void Shop_DrawWorld()
 
     // ── 浮遊アニメ（ゆっくり回転＋上下バウンド）──
     const float t    = static_cast<float>(g_AnimTime);
-    const float bob  = sinf(t * 2.0f) * 0.15f;      // 上下の揺れ幅 ±0.15m
+    const float bob  = sinf(t * 2.0f) * 0.2f;       // 上下の揺れ幅 ±0.2m
     const float spin = t * 0.8f;                     // Y回転 約0.8rad/秒
-    const float baseY = g_Pos.y + 1.2f + bob;        // 地面から少し浮かせる
+    const float baseY = g_Pos.y + 0.5f + bob;        // 全体的に低めに配置
 
     // ライティング（アセンブリ画面のプレビューと同系）
     Light_SetSpecularWorld(Player_Camera_GetPosition(), 100.0f, { 0.6f, 0.5f, 0.4f, 1.0f });
@@ -244,6 +260,39 @@ void Shop_DrawWorld()
                       Player_Camera_GetViewMatrix(),
                       Player_Camera_GetProjectionMatrix(),
                       radius);
+    }
+
+    // ── 「SHOP」を3Dビルボードで表示 ──
+    // フォントアトラス（16x16グリッド）の各文字をビルボード描画する。
+    // 3Dパスなので深度が効き（壁で隠れる）、遠近でサイズが変わり、HUD/UIより奥に描かれる。
+    // 加算合成：アトラスの黒背景を透過させ、光る文字にする。
+    if (g_TexFont >= 0)
+    {
+        const char* label = "SHOP";
+        const int   n  = 4;
+        const float GW = 0.7f, GH = 0.95f, SP = 0.55f;   // 文字サイズ・間隔（ワールド単位）
+        const float labelY = g_Pos.y + 2.0f + bob;        // 目印の上（下げ済み）
+
+        // カメラの水平右ベクトル（文字を横一列に並べる）
+        const XMFLOAT3 camF = Player_Camera_GetFront();
+        XMVECTOR fwd   = XMVector3Normalize(XMVectorSet(camF.x, 0.0f, camF.z, 0.0f));
+        XMVECTOR right = XMVector3Normalize(XMVector3Cross(XMVectorSet(0, 1, 0, 0), fwd));
+        XMFLOAT3 r; XMStoreFloat3(&r, right);
+
+        Direct3D_SetDepthEnable(true);
+        Direct3D_SetBlendStateAdditive(true);
+        for (int i = 0; i < n; ++i)
+        {
+            const int   idx = static_cast<int>(label[i]) - ' ';      // アトラスは ' ' 始まり
+            const float u   = static_cast<float>(idx % 16) * 32.0f;  // 512/16=32px セル
+            const float v   = static_cast<float>(idx / 16) * 32.0f;
+            const float off = (static_cast<float>(i) - (n - 1) * 0.5f) * SP;
+            const XMFLOAT3 pos = { g_Pos.x + r.x * off, labelY, g_Pos.z + r.z * off };
+            Billboard_Draw(g_TexFont, pos, XMFLOAT2{ GW, GH },
+                           XMFLOAT4{ 0.5f, 0.9f, 1.0f, 1.0f },
+                           XMFLOAT4{ u, v, 32.0f, 32.0f });
+        }
+        Direct3D_SetBlendStateAdditive(false);
     }
 
     // ライトを既定へ戻す（Player_Draw 末尾と同様）

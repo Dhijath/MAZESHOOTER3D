@@ -24,7 +24,7 @@ using namespace DirectX;
 void WeaponNormal::Initialize()
 {
     m_cooldown = 0.0;
-    m_shootSE  = LoadAudioWithVolume("resource/sound/machine_gun.wav", 0.5f);
+    m_shootSE  = LoadAudioWithVolume("resource/sound/machine_gun.wav", 0.8f);
 }
 
 void WeaponNormal::Finalize()
@@ -67,7 +67,7 @@ bool WeaponNormal::TryFire(
 void WeaponTripleGun::Initialize()
 {
     m_cooldown = 0.0;
-    m_shootSE  = LoadAudioWithVolume("resource/sound/machine_gun.wav", 0.5f);
+    m_shootSE  = LoadAudioWithVolume("resource/sound/machine_gun.wav", 0.8f);
 }
 
 void WeaponTripleGun::Finalize()
@@ -128,7 +128,7 @@ bool WeaponTripleGun::TryFire(
 void WeaponMissile::Initialize()
 {
     m_cooldown = 0.0;
-    m_shootSE  = LoadAudioWithVolume("resource/sound/rocket_launcher.wav", 0.5f);
+    m_shootSE  = LoadAudioWithVolume("resource/sound/rocket_launcher.wav", 0.8f);
 }
 
 void WeaponMissile::Finalize()
@@ -171,7 +171,7 @@ bool WeaponMissile::TryFire(
 void WeaponMultiMissile::Initialize()
 {
     m_cooldown = 0.0;
-    m_shootSE  = LoadAudioWithVolume("resource/sound/maou_se_battle_gun05.wav", 0.5f);
+    m_shootSE  = LoadAudioWithVolume("resource/sound/rocket_launcher.wav", 0.8f); // ミサイルと同じ発射音
 }
 
 void WeaponMultiMissile::Finalize()

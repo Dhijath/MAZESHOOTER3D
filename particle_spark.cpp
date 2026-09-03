@@ -259,3 +259,26 @@ void SparkEffect_Create(const XMFLOAT3& position, float scale)
 
     g_pEmitters[g_EmitterCount++] = e;
 }
+
+//==============================================================================
+// マルチミサイル用の爆発火花：粒を大きく、低速で遠くに飛ばさない
+//==============================================================================
+void SparkEffect_CreateMulti(const XMFLOAT3& position, float scale)
+{
+    if (g_EmitterCount >= MAX_SPARK_EMITTERS) return;
+    if (g_TexID < 0) return;
+
+    int count = static_cast<int>(24.0f * scale);
+    if (count < 12) count = 12;
+    if (count > 80) count = 80;
+
+    SparkEmitter* e = new SparkEmitter(XMLoadFloat3(&position));
+    e->SetTextureId (g_TexID);
+    e->SetScaleRange(0.35f * scale, 0.80f * scale);  // 大きめの粒
+    e->SetSpeedRange(0.8f  * scale, 2.6f  * scale);  // 低速＝遠くに飛び散らない
+    e->SetLifeRange (0.30f, 0.70f);
+    e->SetGravity   (7.0f);                          // すぐ落ちて広がりすぎない
+    e->Burst(count);
+
+    g_pEmitters[g_EmitterCount++] = e;
+}

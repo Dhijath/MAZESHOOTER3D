@@ -29,6 +29,10 @@ namespace
     // 敵の密度倍率（各ウェーブの湧き数・ボスの取り巻きに掛ける）
     static constexpr int   DENSITY_MULT     = 3;
 
+    // 難易度オフセット：スポーン計算上のウェーブを底上げする。
+    // 2 なら「1ウェーブ目＝従来の3ウェーブ目相当」の構成・数になる。
+    static constexpr int   DIFF_OFFSET      = 2;
+
     static int       g_Wave    = 0;
     static WavePhase g_Phase   = WavePhase::Idle;
     static double    g_Timer   = 0.0;
@@ -50,31 +54,37 @@ namespace
 
     static std::vector<SpawnEntry> CalcSpawnList(int wave)
     {
-        // 基本数：(wave * 2 + 3) × 密度倍率
-        const int base = (wave * 2 + 3) * DENSITY_MULT;
+        // 難易度オフセットを掛けた実効ウェーブで構成・数を決める
+        const int ew = wave + DIFF_OFFSET;
+
+        // 基本数：(実効wave * 2 + 3) × 密度倍率
+        const int base = (ew * 2 + 3) * DENSITY_MULT;
         std::vector<SpawnEntry> list;
 
-        if (wave <= 3)
+        // 割合指定で追加（0体になる種は入れない）
+        auto add = [&](int type, float frac)
         {
-            list.push_back({ 0 /*Normal*/, base });
+            const int c = static_cast<int>(base * frac);
+            if (c > 0) list.push_back({ type, c });
+        };
+
+        // 実効ウェーブが進むほど強い敵種（Speed→Sniper→Tank）を段階的に混ぜる
+        //   Normal=0 / Tank=1 / Speed=2 / Sniper=3
+        if (ew <= 1)
+        {
+            list.push_back({ 0 /*Normal*/, base });                 // 導入：通常のみ
         }
-        else if (wave <= 6)
+        else if (ew == 2)
         {
-            list.push_back({ 0 /*Normal*/, base / 2 + 1 });
-            list.push_back({ 2 /*Speed*/,  base / 2     });
+            add(0, 0.60f); add(2, 0.40f);                           // ＋Speed（機動戦）
         }
-        else if (wave <= 9)
+        else if (ew == 3)
         {
-            list.push_back({ 0 /*Normal*/, base / 3 + 1 });
-            list.push_back({ 2 /*Speed*/,  base / 3     });
-            list.push_back({ 1 /*Tank*/,   base / 3     });
+            add(0, 0.45f); add(2, 0.35f); add(3, 0.20f);            // ＋Sniper（遠距離の圧）
         }
-        else // wave 10
+        else // 実効 wave 4 以降：全種フルミックス
         {
-            list.push_back({ 0 /*Normal*/, 6 * DENSITY_MULT });
-            list.push_back({ 2 /*Speed*/,  6 * DENSITY_MULT });
-            list.push_back({ 1 /*Tank*/,   5 * DENSITY_MULT });
-            list.push_back({ 3 /*Sniper*/, 4 * DENSITY_MULT });
+            add(0, 0.35f); add(2, 0.30f); add(1, 0.20f); add(3, 0.15f);
         }
         return list;
     }
@@ -92,12 +102,20 @@ namespace
 
         if (IsBossWave(wave))
         {
-            // ボスウェーブ：ボス1体＋少数の取り巻き
-            Game_SpawnEnemy(spawns[pick(rng)], T_BOSS);
+            // ボスウェーブ：ボス2体＋取り巻き（Tank/Speed/Sniper の混成）
+            constexpr int BOSS_COUNT = 2;
+            for (int b = 0; b < BOSS_COUNT; ++b)
+                Game_SpawnEnemy(spawns[pick(rng)], T_BOSS);
 
-            const int adds = (2 + wave / 5) * DENSITY_MULT;   // 取り巻きも密度倍率を適用
+            // ボス2体ぶん重いので取り巻きは控えめに
+            const int adds = (2 + wave / 5) * DENSITY_MULT;
             for (int i = 0; i < adds; ++i)
-                Game_SpawnEnemy(spawns[pick(rng)], (i % 2 == 0) ? 0 /*Normal*/ : 2 /*Speed*/);
+            {
+                const int t = (i % 3 == 0) ? 1 /*Tank*/
+                            : (i % 3 == 1) ? 2 /*Speed*/
+                                           : 3 /*Sniper*/;
+                Game_SpawnEnemy(spawns[pick(rng)], t);
+            }
             return;
         }
 

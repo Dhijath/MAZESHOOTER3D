@@ -362,6 +362,14 @@ bool AssemblyScreen_Update(double dt)
             // READY：予算内ならゲーム開始
             if (CalcRemaining() >= 0)
             {
+                // 確定したロードアウトを「記憶用」default に反映する。
+                // これをしないと再入場時に Initialize が古い default へ戻してしまう
+                //（ショップは別途 default を退避/復元するため対象外）。
+                if (!g_ShopMode)
+                {
+                    g_DefaultRight = g_RightSelected;
+                    g_DefaultLeft  = g_LeftSelected;
+                }
                 PlayAudio(g_SeSelect, false);
                 g_Decided = true;
                 return true;

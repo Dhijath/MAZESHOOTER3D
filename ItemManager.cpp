@@ -19,9 +19,11 @@ static Item s_Items[ITEM_MAX];
 //==============================================================================
 void ItemManager_Initialize()
 {
-    //for (int i = 0; i < ITEM_MAX; ++i)
-    //    s_Items[i] = Item{};
-    //
+    // 前回プレイのドロップアイテムを全消去（タイトルへ戻って再入場した際の
+    // 「前のアイテムが残る」対策。Game_Initialize から毎回呼ばれる）
+    for (int i = 0; i < ITEM_MAX; ++i)
+        s_Items[i] = Item{};
+
     //// マップ固定配置（座標はマップに合わせて調整する）
     //ItemManager_Spawn(ItemType::HP_HEAL, { -3.0f, 1.0f,  3.0f });
     //ItemManager_Spawn(ItemType::ENERGY_HEAL, { 3.0f, 1.0f,  3.0f });

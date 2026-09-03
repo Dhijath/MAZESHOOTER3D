@@ -1291,7 +1291,7 @@ void HUD_DrawGameOver(float alpha)
     // 縁取り付きで視認性確保
     const D2D1_COLOR_F col = D2D1::ColorF(1.0f, 0.10f, 0.10f, alpha);
     s_pDW_GameOver->DrawAt(
-        std::wstring(L"Warning"),
+        std::wstring(L"SignalLost"),
         SW * 0.5f, SH * 0.5f,
         SW * 0.5f - 20.0f,
         col,

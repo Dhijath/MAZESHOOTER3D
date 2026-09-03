@@ -108,3 +108,6 @@ void SparkEffect_Draw();
 // scale=1.0 : 通常弾ヒット
 // scale=3.0 : ミサイル爆発
 void SparkEffect_Create(const DirectX::XMFLOAT3& position, float scale = 1.0f);
+
+// マルチミサイル用：粒を大きく・低速で遠くに飛ばさない爆発火花
+void SparkEffect_CreateMulti(const DirectX::XMFLOAT3& position, float scale = 1.0f);

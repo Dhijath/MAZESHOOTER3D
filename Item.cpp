@@ -21,8 +21,8 @@ using namespace DirectX;
 
 static const float ITEM_RADIUS = 0.6f;  // 取得判定の半径（メートル）
 static const float ITEM_SCALE = 0.5f;  // ビルボード表示サイズ
-static const int   ITEM_HP_VALUE = 20;    // HP回復量
-static const float ITEM_ENERGY_VALUE = 50.0f; // エネルギー回復量
+static const int   ITEM_HP_VALUE = 200;    // HP回復量（10倍）
+static const float ITEM_ENERGY_VALUE = 500.0f; // エネルギー回復量（10倍）
 static const float ITEM_ATK_BONUS = 0.15f;  // 攻撃力倍率加算値（+15%）
 static const float ITEM_SPEED_BONUS = 0.010f; // 速度倍率加算値
 //static int s_TexID = -1;
@@ -49,10 +49,10 @@ static void Item_LoadSEOnce()
 {
     if (s_SeInited) return;
 
-    s_SeHp = LoadAudioWithVolume("resource/sound/item_hp.wav", 0.5f);
-    s_SeEnergy = LoadAudioWithVolume("resource/sound/item_energy.wav", 0.5f);
-    s_SeAtk = LoadAudioWithVolume("resource/sound/item_atk.wav", 0.5f);
-    s_SeSpeed = LoadAudioWithVolume("resource/sound/item_speed.wav", 0.5f);
+    s_SeHp = LoadAudioWithVolume("resource/sound/item_hp.wav", 0.25f);
+    s_SeEnergy = LoadAudioWithVolume("resource/sound/item_energy.wav", 0.25f);
+    s_SeAtk = LoadAudioWithVolume("resource/sound/item_atk.wav", 0.25f);
+    s_SeSpeed = LoadAudioWithVolume("resource/sound/item_speed.wav", 0.25f);
 
     s_SeInited = true;
 }

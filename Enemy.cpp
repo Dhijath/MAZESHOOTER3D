@@ -58,7 +58,7 @@ void Enemy_LoadSE()
 
     if (g_enemy_bulletHitSE < 0)
     {
-        g_enemy_bulletHitSE = LoadAudioWithVolume("resource/sound/dageki5.wav", 0.4f);
+        g_enemy_bulletHitSE = LoadAudioWithVolume("resource/sound/dageki5.wav", 0.8f); // 非ボス被弾音が小さかったため増量
         SetAudioAttenuationEnabled(g_enemy_bulletHitSE, true);
     }
 
@@ -287,7 +287,7 @@ void Enemy::Update(double elapsed_time)
         m_IsAlive = false;
         Score_Addscore(GetKillScore());
         if (Game_IsSurvivalMode())
-            WaveManager_AddCredits(GetKillScore());
+            WaveManager_AddCredits(GetKillScore() * 3);  // 武器購入用にクレジットを増量（3倍）
         if (IsDropItem())
             ItemManager_SpawnRandom(m_Position);
     }

@@ -702,7 +702,7 @@ void GameManager_Draw()
         WaveManager_Draw();
         Shop_DrawUI();
         if (!g_IsPaused)
-            Shop_DrawPrompt();   // 近接時「E/Aで開く」案内
+            Shop_DrawPrompt();   // 近接時「E/Aで開く」案内（「SHOP」目印は Shop_DrawWorld 内で3D描画）
         if (g_IsPaused)
             Pause_Draw();
         break;
