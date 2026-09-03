@@ -46,9 +46,12 @@ void StageSelect_Initialize()
 
 void StageSelect_Finalize()
 {
-    UnloadAudio(g_SeCursorMove); g_SeCursorMove = -1;
-    UnloadAudio(g_SeSelect);     g_SeSelect     = -1;
-    UnloadAudio(g_SeCancel);     g_SeCancel     = -1;
+    // SE はここでは解放しない。
+    // この関数は決定/キャンセル SE を鳴らした直後（同フレーム）に呼ばれるため、
+    // ここで UnloadAudio すると DestroyVoice() で再生が即停止し、SE が聞こえなくなる。
+    // （サバイバル決定時に効果音が鳴らなかった原因）
+    // SE ハンドルは Initialize 側が「< 0 のときだけロード」する多重ロード防止付きなので、
+    // 保持したまま次回入場時に再利用する（Title / PreGame など他メニューと同じ扱い）。
 }
 
 void StageSelect_Update(double elapsed_time)

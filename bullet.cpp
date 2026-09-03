@@ -355,6 +355,7 @@ void MissileBullet::EnableBezier(const XMFLOAT3& p0, const XMFLOAT3& p1,
     const XMFLOAT3& p2, float duration, float exitSpeed)
 {
     m_useBezier      = true;
+    m_spawnedBezier  = true;   // 恒久フラグ（m_useBezier は曲線終了で false に戻るため別に保持）
     m_p0             = p0;
     m_p1             = p1;
     m_p2             = p2;
@@ -529,7 +530,8 @@ void BulletManager::Initialize()
     m_pModelNormal  = ModelLoad("Resource/Models/bullet.fbx",  0.15f);
     m_pModelMissile = ModelLoad("Resource/Models/bullet.fbx",  0.15f);  // 後でミサイル用モデルに差し替え
     m_beamTexID = Texture_Load(L"Resource/Texture/effect000.jpg");
-    m_explosionSE = LoadAudioWithVolume("resource/sound/maou_se_battle07.wav", 0.3f);
+    m_explosionSE      = LoadAudioWithVolume("resource/sound/cannon2.wav", 0.4f);  // 通常ミサイル爆発も大砲2
+    m_explosionSEMulti = LoadAudioWithVolume("resource/sound/cannon2.wav", 0.4f);  // マルチミサイル用（大砲2）
 }
 
 //==============================================================================
@@ -543,7 +545,8 @@ void BulletManager::Finalize()
     Texture_Release(m_beamTexID);
     m_beamTexID = -1;
 
-    if (m_explosionSE >= 0) { UnloadAudio(m_explosionSE); m_explosionSE = -1; }
+    if (m_explosionSE >= 0)      { UnloadAudio(m_explosionSE);      m_explosionSE      = -1; }
+    if (m_explosionSEMulti >= 0) { UnloadAudio(m_explosionSEMulti); m_explosionSEMulti = -1; }
 
     ModelRelease(m_pModelNormal);  m_pModelNormal  = nullptr;
     ModelRelease(m_pModelMissile); m_pModelMissile = nullptr;
@@ -598,10 +601,12 @@ void BulletManager::Update(double elapsed_time)
             }
             else if (type == BulletType::Missile)
             {
-                // ミサイル：爆発登録 + 大型火花エフェクト
+                // ミサイル：爆発登録 + 火花エフェクト
+                // マルチミサイルは5発同時に爆発するため、エフェクトを小さめにする
                 auto* m = static_cast<MissileBullet*>(m_bullets[i]);
                 AddExplosion(m->GetPrevPosition(), m->GetExplosionRadius(), m->GetDamage());
-                SparkEffect_Create(m->GetPrevPosition(), 3.0f);
+                PlayAudio(m->IsBezier() ? m_explosionSEMulti : m_explosionSE, false);
+                SparkEffect_Create(m->GetPrevPosition(), m->IsBezier() ? 1.2f : 3.0f);
             }
             // BulletType::Beam はCheckWallCollision()内でエフェクト生成済み
 
@@ -750,7 +755,8 @@ void BulletManager::Destroy(int index)
     {
         auto* m = static_cast<MissileBullet*>(m_bullets[index]);
         AddExplosion(m->GetPrevPosition(), m->GetExplosionRadius(), m->GetDamage());
-        SparkEffect_Create(m->GetPrevPosition(), 3.0f);
+        PlayAudio(m->IsBezier() ? m_explosionSEMulti : m_explosionSE, false);
+        SparkEffect_Create(m->GetPrevPosition(), m->IsBezier() ? 1.2f : 3.0f);
     }
     else
     {
@@ -979,7 +985,7 @@ void BulletManager::AddExplosion(const XMFLOAT3& pos, float radius, int damage)
 {
     if (m_explosionCount >= MAX_EXPLOSIONS) return;
     m_pendingExplosions[m_explosionCount++] = { pos, radius, damage };
-    PlayAudio(m_explosionSE, false);
+    // 爆発SEは呼び出し側で鳴らす（通常ミサイル / マルチミサイルで音を分けるため）
 }
 
 //==============================================================================

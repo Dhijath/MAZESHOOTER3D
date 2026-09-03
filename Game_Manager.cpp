@@ -698,10 +698,11 @@ void GameManager_Draw()
             Pause_Draw();
         break;
     case GameState::Survival:
-        Game_Draw();
-        Shop_Draw();
+        Game_Draw();   // ショップの目印（Shop_DrawWorld）は Game_Draw 内の3Dパスで描画される
         WaveManager_Draw();
         Shop_DrawUI();
+        if (!g_IsPaused)
+            Shop_DrawPrompt();   // 近接時「E/Aで開く」案内
         if (g_IsPaused)
             Pause_Draw();
         break;
@@ -746,22 +747,22 @@ void GameManager_Draw()
     case GameState::Playing:
         if (g_IsPaused)
             InputHint_Draw(
-                "{ENTER} Select",
-                "{A} Select");
+                "{ENTER} Select    {ESC} Back",
+                "{A} Select    {B} Back");
         else
             InputHint_Draw(
-                "{W}{K_A}{S}{K_D} Move    {SPACE} Jump    {MOUSE_MOVE} Aim    {MOUSE_R} R-ARM    {MOUSE_L} L-ARM    {ESC} Pause",
-                "{L_STICK} Move    {A} Jump    {R_STICK} Aim    {RB} R-ARM    {LB} L-ARM    {B} Lock-On    {START} Pause");
+                "{W}{K_A}{S}{K_D} Move    {SPACE} Jump    {SHIFT} Dash    {MOUSE_MOVE} Aim    {MOUSE_R} R-ARM    {MOUSE_L} L-ARM    {ESC} Pause",
+                "{L_STICK} Move    {A} Jump    {B} Dash    {R_STICK} Aim    {RB} R-ARM    {LB} L-ARM    {X} Lock-On    {START} Pause");
         break;
     case GameState::Survival:
         if (g_IsPaused)
             InputHint_Draw(
-                "{ENTER} Select",
-                "{A} Select");
+                "{ENTER} Select    {ESC} Back",
+                "{A} Select    {B} Back");
         else if (!Shop_IsOpen())   // ショップ表示中は Shop_DrawUI が自前のヒントを描く
             InputHint_Draw(
-                "{W}{K_A}{S}{K_D} Move    {SPACE} Jump    {MOUSE_MOVE} Aim    {MOUSE_R} R-ARM    {MOUSE_L} L-ARM    {ESC} Pause",
-                "{L_STICK} Move    {A} Jump    {R_STICK} Aim    {RB} R-ARM    {LB} L-ARM    {B} Lock-On    {START} Pause");
+                "{W}{K_A}{S}{K_D} Move    {SPACE} Jump    {SHIFT} Dash    {MOUSE_MOVE} Aim    {MOUSE_R} R-ARM    {MOUSE_L} L-ARM    {ESC} Pause",
+                "{L_STICK} Move    {A} Jump    {B} Dash    {R_STICK} Aim    {RB} R-ARM    {LB} L-ARM    {X} Lock-On    {START} Pause");
         break;
     case GameState::Option:
         InputHint_Draw(

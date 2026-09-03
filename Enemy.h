@@ -171,6 +171,7 @@ public:
     virtual int  GetKillScore()  const { return 2000; }
     virtual bool IsDropItem()    const { return true; }  // アイテムをドロップするか
     virtual bool IsDeferDeath()  const { return false; } // 死亡フラグを遅延させるか
+    virtual bool IsArmored()     const { return false; } // 装甲持ち：弾直撃で10%カット＋ヒット音は従来のまま（ボス用）
 
     //==========================================================================
     // 向き（正面ベクトル）を直接セット

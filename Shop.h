@@ -12,7 +12,8 @@
 void Shop_Initialize(const DirectX::XMFLOAT3& pos);
 void Shop_Finalize();
 void Shop_Update(double elapsed_time);
-void Shop_Draw();       // 3Dオブジェクト（ビルボード）
+void Shop_DrawWorld();  // フィールドの目印（body＋シールド球）。Game_Draw の3Dパス内から呼ぶ
 void Shop_DrawUI();     // 購入UIオーバーレイ
+void Shop_DrawPrompt(); // 近接時の「E/Aで開く」案内（画面2D）
 
 bool Shop_IsOpen();

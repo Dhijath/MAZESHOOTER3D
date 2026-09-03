@@ -51,6 +51,11 @@ public:
     // 射撃パラメータ
     static constexpr int   SHOOT_DAMAGE       = 610;   // 1発あたりのダメージ
     static constexpr float BOSS_BULLET_SPEED  = 7.0f;  // 弾速（遅め）
+    // 4連射（4門を一斉ではなく順番に連射する）
+    static constexpr float BURST_GAP            = 0.15f; // 連射1発ごとの間隔（秒）
+    // リコイル（プレイヤー武器と同方式：発射で後退→時間で復帰）
+    static constexpr float RECOIL_KICK          = 1.2f;  // 1発あたりの後退量（ワールド単位・大きめで視認性UP）
+    static constexpr float RECOIL_RETURN_SPEED  = 4.0f;  // 復帰速度（小さいほどゆっくり戻る＝後退が見える）
     // バレル配置（前面2×2）— 前面OBBサーフェスに上右・上左・下右・下左
     static constexpr int   BARREL_COUNT    = 4;      // バレル門数（前面2×2）
     static constexpr float BARREL_FLIP_DEG = 180.0f; // モデル反転補正（Player.cpp と同値）
@@ -92,6 +97,7 @@ public:
     int  GetKillScore() const override { return 10000; }
     bool IsDropItem()   const override { return false; }
     bool IsDeferDeath() const override { return true; }
+    bool IsArmored()    const override { return true; }  // 弾直撃で10%カット＋ヒット音は従来のまま
     //==========================================================================
     // 描画処理（本体＋左右バレル）
     //==========================================================================
@@ -105,6 +111,14 @@ private:
     float  m_nextShootInterval = 1.0f; // 次の射撃間隔（ランダム化）
     int    m_shotCount  = 0;     // 発射回数カウンタ（散弾切替用）
     int    m_shootSE = -1;       // ショットガンSEハンドル
+
+    // 4連射バースト状態（4門を順番に撃つ）
+    int    m_burstRemaining = 0;   // 残り発射数（0=非バースト）
+    int    m_burstIndex     = 0;   // 次に撃つバレル番号
+    float  m_burstTimer     = 0.0f;// 次の1発までの残り時間
+
+    // 各バレルのリコイル後退量（発射でキック→時間で0へ復帰）
+    float  m_barrelRecoil[BARREL_COUNT] = {};
 
     // 突進ステート
     BossPhase         m_bossPhase         = BossPhase::NORMAL;
@@ -132,6 +146,10 @@ private:
     // 射撃処理（左右バレルから各1発）
     //==========================================================================
     void Shoot();
+    //==========================================================================
+    // 単一バレル発射（4連射の各発。発射後にそのバレルのリコイルをキックする）
+    //==========================================================================
+    void FireSingleBarrel(int index);
     //==========================================================================
     // 散弾処理（±30°の扇状5発）
     //==========================================================================

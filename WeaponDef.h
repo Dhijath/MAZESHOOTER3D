@@ -18,6 +18,7 @@ enum WeaponID
     WEAPON_MISSILE,
     WEAPON_SHIELD,
     WEAPON_MULTIMISSILE,   // マルチミサイル（ベジェ曲線で拡散する誘導ミサイル）
+    WEAPON_TRIPLEGUN,      // トリプルマシンガン（横3連バレル・1発の威力40%減）
     WEAPON_COUNT
 };
 

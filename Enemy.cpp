@@ -33,8 +33,9 @@ using namespace DirectX;
 
 namespace
 {
-    int g_enemy_hitSE  = -1;
-    int g_enemy_deadSE = -1;
+    int g_enemy_hitSE       = -1;   // 敵接触・ボス/装甲被弾など従来のヒット音
+    int g_enemy_bulletHitSE = -1;   // プレイヤー弾が敵に直撃したときの打撃音（打撃5）
+    int g_enemy_deadSE      = -1;
 
     constexpr float ATTENUATION_MAX_DIST = 30.0f;
 
@@ -55,6 +56,12 @@ void Enemy_LoadSE()
         SetAudioAttenuationEnabled(g_enemy_hitSE, true);
     }
 
+    if (g_enemy_bulletHitSE < 0)
+    {
+        g_enemy_bulletHitSE = LoadAudioWithVolume("resource/sound/dageki5.wav", 0.4f);
+        SetAudioAttenuationEnabled(g_enemy_bulletHitSE, true);
+    }
+
     if (g_enemy_deadSE < 0)
     {
         g_enemy_deadSE = LoadAudioWithVolume("resource/sound/dead.wav", 1.0f);
@@ -65,8 +72,9 @@ void Enemy_LoadSE()
 
 void Enemy_UnloadSE()
 {
-    if (g_enemy_hitSE  >= 0) { UnloadAudio(g_enemy_hitSE);  g_enemy_hitSE  = -1; }
-    if (g_enemy_deadSE >= 0) { UnloadAudio(g_enemy_deadSE); g_enemy_deadSE = -1; }
+    if (g_enemy_hitSE       >= 0) { UnloadAudio(g_enemy_hitSE);       g_enemy_hitSE       = -1; }
+    if (g_enemy_bulletHitSE >= 0) { UnloadAudio(g_enemy_bulletHitSE); g_enemy_bulletHitSE = -1; }
+    if (g_enemy_deadSE      >= 0) { UnloadAudio(g_enemy_deadSE);      g_enemy_deadSE      = -1; }
 }
 
 void Enemy::ConfirmDeath()
@@ -476,13 +484,10 @@ void Enemy::ResolveWallCollisionAtPosition(XMVECTOR* ioPos, XMVECTOR* ioVel, XMF
     constexpr float TELEPORT_THRESHOLD = 0.3f;
     constexpr float r = ENEMY_HALF_WIDTH_X; // 円半径（= 0.25f）
 
-    for (int i = 0; i < Map_GetObjectsCount(); ++i)
+    const int wallCount = Map_GetWallColliderCount();
+    for (int i = 0; i < wallCount; ++i)
     {
-        const MapObject* mo = Map_GetObject(i);
-        if (!mo) continue;
-        if (mo->KindId != 2) continue;
-
-        const AABB& a = mo->Aabb;
+        const AABB& a = *Map_GetWallCollider(i);   // 壁のみの高速リストを走査
         XMFLOAT3 pos;
         XMStoreFloat3(&pos, *ioPos);
 
@@ -590,13 +595,10 @@ void Enemy::ResolveFloorCollision(XMVECTOR* ioPos, XMVECTOR* ioVel)
     float supportY = 0.0f;
     bool foundFloor = false;
 
-    for (int i = 0; i < Map_GetObjectsCount(); ++i)
+    const int floorCount = Map_GetFloorColliderCount();
+    for (int i = 0; i < floorCount; ++i)
     {
-        const MapObject* mo = Map_GetObject(i);
-        if (!mo) continue;
-        if (mo->KindId != 1) continue; // KIND_FLOOR
-
-        const AABB& floor = mo->Aabb;
+        const AABB& floor = *Map_GetFloorCollider(i);   // 床のみの高速リストを走査
 
         // XZ重なり判定（簡易）
         bool overlapX = (enemyOBB.center.x - ENEMY_HALF_WIDTH_X <= floor.max.x &&
@@ -744,12 +746,15 @@ void Enemy::ResolveBulletHits()
         if (!hit)
             continue;
 
-        //ヒットSE
-        UpdateAudioAttenuation(g_enemy_hitSE, CalcDistToPlayer(m_Position), ATTENUATION_MAX_DIST);
-        PlayAudio(g_enemy_hitSE, false);
+        // ダメージ量を取得（装甲持ち＝ボスは10%カット）
+        int bulletDamage = Bullet_GetDamage(i);
+        if (IsArmored())
+            bulletDamage = static_cast<int>(bulletDamage * 0.9f);
 
-        // ダメージ量を取得
-        const int bulletDamage = Bullet_GetDamage(i);
+        // ヒットSE：通常は打撃音（打撃5）、装甲持ち（ボス）は従来のヒット音のまま
+        const int hitSE = IsArmored() ? g_enemy_hitSE : g_enemy_bulletHitSE;
+        UpdateAudioAttenuation(hitSE, CalcDistToPlayer(m_Position), ATTENUATION_MAX_DIST);
+        PlayAudio(hitSE, false);
 
         // ビーム弾は貫通するため削除しない
         if (!Bullet_IsBeam(i))

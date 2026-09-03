@@ -79,6 +79,7 @@ namespace                                                // ファイル内限�
     float gMouseSensYaw   = 0.0050f;                    // マウス左右感度（オプションから変更可）
     float gMouseSensPitch = 0.0012f;                    // マウス上下感度（オプションから変更可）
     bool  gMouseInvertY   = false;                      // Y軸反転（true=上向きで下を向く）
+    float gPadSens        = 1.0f;                        // ゲームパッド右スティック感度（倍率・オプションから変更可）
 
     //==========================================================================
     // スペクテイターカメラ用パラメータ（プレイヤーから独立した自由移動）
@@ -263,8 +264,8 @@ static void UpdateMouseCamera(double elapsed_time)       // 自由視点を更�
     const float PAD_YAW_SPEED = 3.0f;                    // ヨー速度（rad/sec）
     const float PAD_PITCH_SPEED = 2.0f;                  // ピッチ速度（rad/sec）
 
-    gYaw += rx * PAD_YAW_SPEED * static_cast<float>(elapsed_time); // パッドでヨー加算
-    gPitch += ry * PAD_PITCH_SPEED * static_cast<float>(elapsed_time); // パッドでピッチ加算
+    gYaw += rx * PAD_YAW_SPEED * gPadSens * static_cast<float>(elapsed_time); // パッドでヨー加算（感度倍率適用）
+    gPitch += ry * PAD_PITCH_SPEED * gPadSens * static_cast<float>(elapsed_time); // パッドでピッチ加算（感度倍率適用）
 
     // ── パッド ロックオンアシスト ──────────────────────────────
     // 右スティックを大きく動かしているときは自分で向いているのでアシストを弱める
@@ -640,4 +641,19 @@ bool Player_Camera_GetMouseInvertY()                         // Y軸反転取得
 void Player_Camera_SetMouseInvertY(bool invert)              // Y軸反転設定
 {
     gMouseInvertY = invert;
+}
+
+//==============================================================================
+// ゲームパッド感度（右スティックのカメラ速度倍率）getter / setter
+//==============================================================================
+float Player_Camera_GetPadSensitivity()                      // パッド感度取得
+{
+    return gPadSens;
+}
+
+void Player_Camera_SetPadSensitivity(float sens)             // パッド感度設定（倍率をクランプ）
+{
+    if (sens < 0.05f) sens = 0.05f;
+    if (sens > 3.0f)  sens = 3.0f;
+    gPadSens = sens;
 }

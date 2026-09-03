@@ -57,7 +57,9 @@ static IconEntry s_Icons[] =
     { "{S}",       L"resource/texture/Keyboard & Mouse/Default/keyboard_s.png",            -1 },
     { "{K_A}",     L"resource/texture/Keyboard & Mouse/Default/keyboard_a.png",            -1 },
     { "{K_D}",     L"resource/texture/Keyboard & Mouse/Default/keyboard_d.png",            -1 },
+    { "{E}",       L"resource/texture/Keyboard & Mouse/Default/keyboard_e.png",            -1 },
     { "{F}",       L"resource/texture/Keyboard & Mouse/Default/keyboard_f.png",            -1 },
+    { "{SHIFT}",   L"resource/texture/Keyboard & Mouse/Default/keyboard_shift.png",        -1 },
     { "{SPACE}",   L"resource/texture/Keyboard & Mouse/Default/keyboard_space.png",        -1 },
     { "{UP}",      L"resource/texture/Keyboard & Mouse/Default/keyboard_arrow_up.png",     -1 },
     { "{DOWN}",    L"resource/texture/Keyboard & Mouse/Default/keyboard_arrow_down.png",   -1 },
@@ -74,6 +76,7 @@ static IconEntry s_Icons[] =
     { "{RT}",      L"resource/texture/Xbox Series/Default/xbox_rt.png",                   -1 },
     { "{A}",       L"resource/texture/Xbox Series/Default/xbox_button_color_a.png",       -1 },
     { "{B}",       L"resource/texture/Xbox Series/Default/xbox_button_color_b.png",       -1 },
+    { "{X}",       L"resource/texture/Xbox Series/Default/xbox_button_color_x.png",       -1 },
     { "{START}",   L"resource/texture/Xbox Series/Default/xbox_button_start_icon.png",    -1 },
     { "{L_STICK}", L"resource/texture/Xbox Series/Default/xbox_stick_l.png",              -1 },
     { "{R_STICK}", L"resource/texture/Xbox Series/Default/xbox_stick_r.png",              -1 },
@@ -427,6 +430,72 @@ void InputHint_Draw(const char* kbmText, const char* padText, const wchar_t* des
     }
 
     // ── 後続スプライト描画のために RTV を再バインド ─────────────────────
+    Direct3D_BindMainRenderTarget();
+    Sprite_Begin();
+}
+
+//==============================================================================
+// 任意位置に「文言＋ボタンアイコン」を描画（バー背景なし・KB/パッド自動切替）
+//   バーと同じトークン方式。cx, cy を中心にトークン列をセンタリングして描く。
+//==============================================================================
+void InputHint_DrawAt(const char* kbmText, const char* padText, float cx, float cy, float scale)
+{
+    if (s_WhiteTexID < 0) return;
+    if (scale <= 0.0f) scale = 1.0f;
+
+    Direct3D_SetDepthEnable(false);
+    Direct3D_SetBlendState(true);
+    Sprite_Begin();
+
+    // デバイスに応じた文字列をトークン列へ
+    const char* hint   = (s_Device == InputDevice::KBMouse) ? kbmText : padText;
+    const auto  tokens = ParseHint(hint);
+
+    // 合計幅（scale 適用）からセンタリング開始 X を求める
+    float totalW = 0.0f;
+    for (const auto& t : tokens) totalW += t.width * scale;
+    const float startX  = cx - totalW * 0.5f;
+    const float iconSz  = BTN_SZ * scale;
+
+    // Pass 1: ボタンアイコン（スプライト・仮想座標系）
+    {
+        const XMFLOAT4 white = { 1.0f, 1.0f, 1.0f, 1.0f };
+        float x = startX;
+        for (const auto& t : tokens)
+        {
+            if (t.isIcon && t.texID >= 0)
+                Sprite_Draw(t.texID, x, cy - iconSz * 0.5f, iconSz, iconSz, white);
+            x += t.width * scale;
+        }
+    }
+
+    // Pass 2: テキスト（DirectWrite・実ピクセルへスケール）
+    // SetScale に scale を掛け、座標側を 1/scale して「位置はそのまま・文字だけ拡大」
+    Direct3D_BindMainRenderTarget();
+    const float scaleX = static_cast<float>(Direct3D_GetBackBufferWidth())  / 1600.0f;
+    const float scaleY = static_cast<float>(Direct3D_GetBackBufferHeight()) / 900.0f;
+
+    if (s_pDW && !tokens.empty())
+    {
+        s_pDW->SetScale(scaleX * scale, scaleY * scale);
+        s_pDW->BeginBatch();
+        float x = startX;
+        for (const auto& t : tokens)
+        {
+            if (!t.isIcon && !t.text.empty())
+            {
+                const float tcx         = x + t.width * scale * 0.5f;
+                const float renderHalfW = t.width * scale * 0.5f + 160.0f;
+                s_pDW->DrawAt(t.text, tcx / scale, cy / scale, renderHalfW / scale,
+                    D2D1::ColorF(0.9f, 0.9f, 0.9f, 1.0f));
+            }
+            x += t.width * scale;
+        }
+        s_pDW->EndBatch();
+        s_pDW->SetScale(1.0f, 1.0f);
+    }
+
+    // 後続スプライト描画のために RTV を再バインド
     Direct3D_BindMainRenderTarget();
     Sprite_Begin();
 }

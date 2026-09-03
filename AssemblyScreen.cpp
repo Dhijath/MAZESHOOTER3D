@@ -31,7 +31,6 @@
 #include "ModelToon.h"
 #include "ShaderToon.h"
 #include "ShaderEdge.h"
-#include "shield.h"
 #include "light.h"
 #include "UIInput.h"
 #include "keyboard.h"
@@ -70,6 +69,10 @@ static constexpr float LP_ITEM_START_L = 308.0f;
 // （WEAPON_COUNT=4 のとき従来値 47/41 相当、5 で 37.6/31.6 に自動で詰まる）
 static constexpr float LP_ITEM_SPACING = (LP_DIV_Y - LP_ITEM_START_R) / (float)WEAPON_COUNT;
 static constexpr float LP_ITEM_H       = LP_ITEM_SPACING - 6.0f;
+// 行内の文字を縦センタリングするオフセット（帯の高さと文字高さから算出）。
+// 固定値だと武器数が増えて行が詰まったときに帯と文字がズレるため、帯高に追従させる。
+static constexpr float LP_ITEM_TEXT_H   = 18.0f;                              // 項目フォントサイズ相当
+static constexpr float LP_ITEM_TEXT_OFF = (LP_ITEM_H - LP_ITEM_TEXT_H) * 0.5f; // 帯に対する文字の上端オフセット
 
 // 準備完了（READY）ボタン：左パネル下部、下部ヒントバー（y≒862）の上に配置
 static constexpr float LP_READY_X = LEFT_X + 14.0f;
@@ -706,28 +709,6 @@ void AssemblyScreen_Draw()
         if (rWeaponModel) ModelDrawToon(rWeaponModel, rWeaponWorld);
         if (lWeaponModel) ModelDrawToon(lWeaponModel, lWeaponWorld);
 
-        // ── ショップモードのみ：胴体をシールドの球体で包む ──
-        if (g_ShopMode)
-        {
-            // 胴体（body）の中心と、それを包む半径を AABB から算出
-            const float bcy = (bodyAABB.min.y + bodyAABB.max.y) * 0.5f;
-            float ext = bodyAABB.max.x - bodyAABB.min.x;
-            const float ey = bodyAABB.max.y - bodyAABB.min.y;
-            const float ez = bodyAABB.max.z - bodyAABB.min.z;
-            if (ey > ext) ext = ey;
-            if (ez > ext) ext = ez;
-
-            const XMFLOAT3 sphereCenter = { 0.0f, bcy, 0.0f };
-            const float    sphereRadius = ext * 0.75f;
-
-            XMFLOAT4X4 ppViewF, ppProjF;
-            XMStoreFloat4x4(&ppViewF, ppView);
-            XMStoreFloat4x4(&ppProjF, ppProj);
-
-            setPlayerVP();  // プレビュー用ビューポートを再設定してから描画
-            Shield_DrawAt(sphereCenter, ppViewF, ppProjF, sphereRadius);
-        }
-
         // エッジ合成（フルVP復元してから DrawEdge）
         {
             D3D11_VIEWPORT fullVP{};
@@ -779,7 +760,7 @@ void AssemblyScreen_Draw()
 
         for (int i = 0; i < WEAPON_COUNT; ++i)
         {
-            const float iy   = LP_ITEM_START_R + i * LP_ITEM_SPACING + 10.0f;
+            const float iy   = LP_ITEM_START_R + i * LP_ITEM_SPACING + LP_ITEM_TEXT_OFF;
             const bool  cur  = (g_ActivePanel == PANEL_RARM && i == g_RightCursor); // ホバー中
             const bool  eqp  = (i == g_RightSelected);                              // 確定・装備中
             FontData fd;
@@ -809,7 +790,7 @@ void AssemblyScreen_Draw()
 
         for (int i = 0; i < WEAPON_COUNT; ++i)
         {
-            const float iy   = LP_ITEM_START_L + i * LP_ITEM_SPACING + 10.0f;
+            const float iy   = LP_ITEM_START_L + i * LP_ITEM_SPACING + LP_ITEM_TEXT_OFF;
             const bool  cur  = (g_ActivePanel == PANEL_LARM && i == g_LeftCursor); // ホバー中
             const bool  eqp  = (i == g_LeftSelected);                             // 確定・装備中
             FontData fd;
@@ -888,6 +869,18 @@ void AssemblyScreen_Draw()
         }
         g_pDWBody->DrawString(std::wstring(wd.description),
             CP_BAR_X_LABEL, CP_BAR_ROW3_Y + 55.0f, D2D1_DRAW_TEXT_OPTIONS_NONE);
+
+        // 値段（コスト）― 説明文の下に配置
+        {
+            FontData fd;
+            fd.font = Font::Arial; fd.fontSize = 18.0f;
+            fd.fontWeight = DWRITE_FONT_WEIGHT_BOLD;
+            fd.Color = D2D1::ColorF(1.0f, 0.75f, 0.2f, 1.0f);  // アンバー
+            g_pDWBody->SetFont(&fd);
+        }
+        g_pDWBody->DrawString("COST",  CP_BAR_X_LABEL, CP_BAR_ROW3_Y + 120.0f, D2D1_DRAW_TEXT_OPTIONS_NONE);
+        snprintf(buf, sizeof(buf), "%dc", wd.cost);
+        g_pDWBody->DrawString(buf,     CP_VAL_X,       CP_BAR_ROW3_Y + 120.0f, D2D1_DRAW_TEXT_OPTIONS_NONE);
 
         // ── 右パネル ──────────────────────────────────────
         {

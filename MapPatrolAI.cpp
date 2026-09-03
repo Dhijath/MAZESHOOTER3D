@@ -86,7 +86,7 @@ bool MapPatrolAI_HasLineOfSight(
     DirectX::XMFLOAT3 toFlat = { to.x,   wallCenterY, to.z };
 
     DirectX::XMFLOAT3 hitPos{};
-    return !Map_RaycastWalls(fromFlat, toFlat, &hitPos);
+    return !Map_RaycastWalls(fromFlat, toFlat, &hitPos, /*wallsOnly=*/true);
 }
 //==============================================================================
 // 到達可能な巡回目的地を取得
@@ -123,7 +123,7 @@ DirectX::XMFLOAT3 MapPatrolAI_GetReachableDestination(
         DirectX::XMFLOAT3 candidateFlat = { candidate.x, wallCenterY, candidate.z };
 
         DirectX::XMFLOAT3 hitPos{};
-        if (!Map_RaycastWalls(fromFlat, candidateFlat, &hitPos))
+        if (!Map_RaycastWalls(fromFlat, candidateFlat, &hitPos, /*wallsOnly=*/true))
         {
             return candidate;
         }
@@ -181,7 +181,7 @@ DirectX::XMFLOAT3 MapPatrolAI_GetNearbyDestination(
         DirectX::XMFLOAT3 candidateFlat = { candidate.x, wallCenterY, candidate.z };
 
         DirectX::XMFLOAT3 hitPos{};
-        if (!Map_RaycastWalls(fromFlat, candidateFlat, &hitPos))
+        if (!Map_RaycastWalls(fromFlat, candidateFlat, &hitPos, /*wallsOnly=*/true))
         {
             return candidate;
         }

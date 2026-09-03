@@ -16,8 +16,8 @@ using namespace DirectX;
 
 void Map_GenerateOutdoor(std::uint32_t seed)
 {
-    constexpr int   W   = 61;
-    constexpr int   H   = 61;
+    constexpr int   W   = 49;   // アリーナ縮小（旧61）で敵密度アップ
+    constexpr int   H   = 49;
     constexpr float OX  = 0.5f;
     constexpr float OZ  = 0.5f;
 
@@ -139,7 +139,7 @@ void Map_GenerateOutdoor(std::uint32_t seed)
     //------------------------------------------------------------------
     Map_Internal_ClearEnemySpawns();
     {
-        constexpr int kEnemySpawnTarget = 20;
+        constexpr int kEnemySpawnTarget = 30;  // 湧き点を増やして3倍の敵を散らす（旧20）
         constexpr int kEnemySpawnClear  = 8;   // プレイヤースポーンからの最低距離
 
         std::uniform_int_distribution<int> dist(5, W - 6);

@@ -60,6 +60,13 @@ void EnemyBoss::Initialize(const XMFLOAT3& position)
     m_chargeDamageDealt = false;
     m_shotCount         = 0;
     m_nextShootInterval = 1.0f;
+
+    // 4連射バースト・リコイル初期化
+    m_burstRemaining = 0;
+    m_burstIndex     = 0;
+    m_burstTimer     = 0.0f;
+    for (int i = 0; i < BARREL_COUNT; ++i)
+        m_barrelRecoil[i] = 0.0f;
 }
 
 //==============================================================================
@@ -255,6 +262,7 @@ void EnemyBoss::Update(double elapsed_time)
             m_chargeTimer       = 0.0f;
             m_chargeDamageDealt = false;
             m_shootTimer        = 0.0f; // 溜め開始時に射撃タイマーをリセット
+            m_burstRemaining    = 0;    // 進行中の連射を中断する
         }        break;
     }
 
@@ -333,13 +341,39 @@ void EnemyBoss::Update(double elapsed_time)
     }
 
     //==========================================================================
-    // 射撃タイマー更新（溜め・突進中は射撃しない）
+    // リコイル復帰（毎フレーム・指数減衰。プレイヤー武器と同方式）
     //==========================================================================
-    // ==== 射撃（突進中・溜め中は撃たない）====
+    {
+        const float rt = std::min(1.0f, RECOIL_RETURN_SPEED * dt);
+        for (int i = 0; i < BARREL_COUNT; ++i)
+            m_barrelRecoil[i] -= m_barrelRecoil[i] * rt;
+    }
+
+    //==========================================================================
+    // 射撃（突進中・溜め中は撃たない）
+    //==========================================================================
     if (m_bossPhase == BossPhase::NORMAL || m_bossPhase == BossPhase::COOLDOWN)
     {
+        //----------------------------------------------------------------------
+        // 4連射バーストの進行：開始済みなら BURST_GAP ごとに1門ずつ発射する
+        //----------------------------------------------------------------------
+        if (m_burstRemaining > 0)
+        {
+            m_burstTimer -= dt;
+            if (m_burstTimer <= 0.0f)
+            {
+                FireSingleBarrel(m_burstIndex);
+                m_burstIndex = (m_burstIndex + 1) % BARREL_COUNT;
+                m_burstRemaining--;
+                m_burstTimer = BURST_GAP;
+            }
+        }
+
+        //----------------------------------------------------------------------
+        // 射撃サイクル開始（連射中は新規開始しない）
+        //----------------------------------------------------------------------
         m_shootTimer += dt;
-        if (m_shootTimer >= m_nextShootInterval)
+        if (m_shootTimer >= m_nextShootInterval && m_burstRemaining == 0)
         {
             m_shootTimer        = 0.0f;
             m_nextShootInterval = 0.7f + (rand() % 90) * 0.01f;
@@ -348,9 +382,16 @@ void EnemyBoss::Update(double elapsed_time)
             {
                 m_shotCount++;
                 if (m_shotCount % 3 == 0)
-                    SpreadShoot();
+                {
+                    SpreadShoot();               // 3回に1回は扇状散弾（従来どおり同時発射）
+                }
                 else
-                    Shoot();
+                {
+                    // 4連射バースト開始：次フレームから4門を順に1発ずつ撃つ
+                    m_burstRemaining = BARREL_COUNT;
+                    m_burstIndex     = 0;
+                    m_burstTimer     = 0.0f;      // 最初の1発は即発射
+                }
 
                 m_lastShotTimer = 0.0f; // 射撃直後フラグをリセット
             }
@@ -573,6 +614,19 @@ XMMATRIX EnemyBoss::GetBarrelWorldMatrix(int faceIndex)
         aimDir = bossFront; // 突進中：正面固定
     }
 
+    // ── リコイル：発射直後はバレルを銃口方向(aimDir)の逆＝後方へずらす ──
+    // プレイヤー武器（player.cpp）と同方式。m_barrelRecoil は発射で RECOIL_KICK に
+    // キックされ、Update() で時間とともに 0 へ復帰する。
+    if (m_barrelRecoil[faceIndex] > 0.0001f)
+    {
+        XMVECTOR back = XMVectorScale(aimDir, -m_barrelRecoil[faceIndex]);
+        barrelOriginPos.x += XMVectorGetX(back);
+        barrelOriginPos.y += XMVectorGetY(back);
+        barrelOriginPos.z += XMVectorGetZ(back);
+        barrelTrans = XMMatrixTranslation(
+            barrelOriginPos.x, barrelOriginPos.y, barrelOriginPos.z);
+    }
+
     XMVECTOR aimZ = XMVectorNegate(aimDir);
     XMVECTOR aimX = XMVector3Normalize(XMVector3Cross(up, aimZ));
     if (XMVectorGetX(XMVector3LengthSq(aimX)) < 0.001f)
@@ -643,6 +697,43 @@ void EnemyBoss::Shoot()
 }
 
 //==============================================================================
+// 単一バレル発射（4連射の各発）
+//
+// ■役割
+// ・指定バレルのマズル位置からプレイヤー胴体へ弾を1発発射する
+// ・発射後にそのバレルのリコイルをキックする（プレイヤー武器と同方式）
+// ・発射ごとにSEを鳴らす（4連射で「ダダダダ」と鳴る）
+//==============================================================================
+void EnemyBoss::FireSingleBarrel(int index)
+{
+    if (index < 0 || index >= BARREL_COUNT) return;
+    if (!m_pBarrel[index]) return;
+
+    XMFLOAT3 playerPos = Player_GetPosition();
+    XMFLOAT3 target = { playerPos.x, playerPos.y + 0.3f, playerPos.z };
+
+    const AABB barrelLocal = ModelGetAABB(m_pBarrel[index], { 0.0f, 0.0f, 0.0f });
+    XMMATRIX  barrelWorld = GetBarrelWorldMatrix(index);
+
+    // バレル先端（ローカルZ最小＝マズル）をワールド座標へ
+    XMVECTOR muzzleLocal = XMVectorSet(0.0f, 0.0f, barrelLocal.min.z, 1.0f);
+    XMVECTOR muzzleWorld = XMVector3TransformCoord(muzzleLocal, barrelWorld);
+    XMFLOAT3 muzzlePos;
+    XMStoreFloat3(&muzzlePos, muzzleWorld);
+
+    XMVECTOR dir = XMVector3Normalize(XMLoadFloat3(&target) - muzzleWorld);
+    XMFLOAT3 vel;
+    XMStoreFloat3(&vel, dir);
+
+    EnemyBullet_Create(muzzlePos, vel, SHOOT_DAMAGE, BOSS_BULLET_SPEED);
+
+    // リコイルキック（描画は次のフレームから後退→復帰する）
+    m_barrelRecoil[index] = RECOIL_KICK;
+
+    PlayAudio(m_shootSE, false);
+}
+
+//==============================================================================
 // 散弾処理
 //
 // ■役割
@@ -682,5 +773,6 @@ void EnemyBoss::SpreadShoot()
         EnemyBullet_Create(muzzlePos, vel, SHOOT_DAMAGE, BOSS_BULLET_SPEED);
     }
 
+    m_barrelRecoil[0] = RECOIL_KICK;   // 散弾を撃った前面バレルもリコイル
     PlayAudio(m_shootSE, false);
 }

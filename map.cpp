@@ -90,6 +90,12 @@ namespace
     // 内部状態
     //==========================================================================
     std::vector<MapObject> g_MapObjects;
+    // 壁コライダーだけを抜き出したリスト（レイキャスト/衝突の高速化用）。
+    // g_MapObjects は床・天井・ミニマップタイルまで含み数千要素になるため、
+    // 壁だけを走査したい処理はこちらを使う。Map_RegisterFloors() で再構築する。
+    std::vector<AABB> g_WallColliders;
+    // 床コライダーだけを抜き出したリスト（床衝突の高速化用）。同上の理由で用意する。
+    std::vector<AABB> g_FloorColliders;
     // エネミースポーン候補（ワールド座標）
     std::vector<XMFLOAT3> g_EnemySpawnPositions;
 
@@ -1333,12 +1339,44 @@ int   Map_Internal_KindWall()   { return KIND_WALL; }
 void Map_RegisterFloors()
 {
     FloorRegistry::Clear();
+    g_WallColliders.clear();
+    g_FloorColliders.clear();
 
     for (const MapObject& o : g_MapObjects)
     {
         if (o.KindId == KIND_FLOOR)
+        {
             FloorRegistry::Add(o.Aabb);
+            g_FloorColliders.push_back(o.Aabb); // 床だけの高速走査用リストを構築
+        }
+        else if (o.KindId == KIND_WALL)
+        {
+            g_WallColliders.push_back(o.Aabb);  // 壁だけの高速走査用リストを構築
+        }
     }
+}
+
+//==============================================================================
+// 壁 / 床コライダー（高速走査用）アクセサ
+//==============================================================================
+int Map_GetWallColliderCount()
+{
+    return static_cast<int>(g_WallColliders.size());
+}
+
+const AABB* Map_GetWallCollider(int index)
+{
+    return &g_WallColliders[index];
+}
+
+int Map_GetFloorColliderCount()
+{
+    return static_cast<int>(g_FloorColliders.size());
+}
+
+const AABB* Map_GetFloorCollider(int index)
+{
+    return &g_FloorColliders[index];
 }
 
 //==============================================================================
@@ -1863,28 +1901,16 @@ bool Map_RaycastWalls(
     float nearestT = FLT_MAX;
     bool  hit = false;
 
-    for (const MapObject& obj : g_MapObjects)
+    // 1つの AABB に対するスラブ判定。ヒットすれば nearestT / hit を更新する。
+    auto testAABB = [&](const AABB& a)
     {
-        if (wallsOnly)
-        {
-            if (obj.KindId != KIND_WALL) continue;
-        }
-        else
-        {
-            if (obj.KindId != KIND_WALL &&
-                obj.KindId != KIND_FLOOR &&
-                obj.KindId != KIND_CEILING) continue;
-        }
-
-        const AABB& a = obj.Aabb;
-
         float tMin = 0.0f;
         float tMax = 1.0f;
 
         // X軸スラブ
         if (fabsf(dx) < 1e-6f)
         {
-            if (start.x < a.min.x || start.x > a.max.x) continue;
+            if (start.x < a.min.x || start.x > a.max.x) return;
         }
         else
         {
@@ -1893,13 +1919,13 @@ bool Map_RaycastWalls(
             if (t1 > t2) std::swap(t1, t2);
             tMin = std::max(tMin, t1);
             tMax = std::min(tMax, t2);
-            if (tMin > tMax) continue;
+            if (tMin > tMax) return;
         }
 
         // Y軸スラブ
         if (fabsf(dy) < 1e-6f)
         {
-            if (start.y < a.min.y || start.y > a.max.y) continue;
+            if (start.y < a.min.y || start.y > a.max.y) return;
         }
         else
         {
@@ -1908,13 +1934,13 @@ bool Map_RaycastWalls(
             if (t1 > t2) std::swap(t1, t2);
             tMin = std::max(tMin, t1);
             tMax = std::min(tMax, t2);
-            if (tMin > tMax) continue;
+            if (tMin > tMax) return;
         }
 
         // Z軸スラブ
         if (fabsf(dz) < 1e-6f)
         {
-            if (start.z < a.min.z || start.z > a.max.z) continue;
+            if (start.z < a.min.z || start.z > a.max.z) return;
         }
         else
         {
@@ -1923,7 +1949,7 @@ bool Map_RaycastWalls(
             if (t1 > t2) std::swap(t1, t2);
             tMin = std::max(tMin, t1);
             tMax = std::min(tMax, t2);
-            if (tMin > tMax) continue;
+            if (tMin > tMax) return;
         }
 
         if (tMin < nearestT)
@@ -1931,13 +1957,41 @@ bool Map_RaycastWalls(
             nearestT = tMin;
             hit = true;
         }
+    };
+
+    // 壁のみ判定なら壁コライダー専用リスト（数百要素）を走査する。
+    // これにより g_MapObjects 全走査（床・ミニマップ込みで数千要素）を回避する。
+    if (wallsOnly && !g_WallColliders.empty())
+    {
+        for (const AABB& a : g_WallColliders)
+            testAABB(a);
+    }
+    else
+    {
+        for (const MapObject& obj : g_MapObjects)
+        {
+            if (wallsOnly)
+            {
+                if (obj.KindId != KIND_WALL) continue;
+            }
+            else
+            {
+                if (obj.KindId != KIND_WALL &&
+                    obj.KindId != KIND_FLOOR &&
+                    obj.KindId != KIND_CEILING) continue;
+            }
+            testAABB(obj.Aabb);
+        }
     }
 
     if (!hit) return false;
 
-    outHitPos->x = start.x + dx * nearestT;
-    outHitPos->y = start.y + dy * nearestT;
-    outHitPos->z = start.z + dz * nearestT;
+    if (outHitPos)
+    {
+        outHitPos->x = start.x + dx * nearestT;
+        outHitPos->y = start.y + dy * nearestT;
+        outHitPos->z = start.z + dz * nearestT;
+    }
 
     return true;
 }

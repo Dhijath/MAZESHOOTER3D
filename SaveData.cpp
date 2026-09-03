@@ -95,8 +95,10 @@ void SaveData_Load()
     // ── Camera ─────────────────────────────────────────────
     float sens   = ReadFloat(SEC_CAMERA, "Sensitivity", 0.005f, path);
     int   invertY = ReadInt(SEC_CAMERA, "InvertY", 0, path);
+    float padSens = ReadFloat(SEC_CAMERA, "PadSensitivity", 1.0f, path);
     Player_Camera_SetMouseSensitivity(sens);
     Player_Camera_SetMouseInvertY(invertY != 0);
+    Player_Camera_SetPadSensitivity(padSens);
 
     // ── Display ────────────────────────────────────────────
     int savedFS = ReadInt(SEC_DISPLAY, "Fullscreen", 0, path);
@@ -150,8 +152,9 @@ void SaveData_Save()
     WriteFloat(SEC_AUDIO, "Volume", GetMasterVolume(), path);
 
     // ── Camera ─────────────────────────────────────────────
-    WriteFloat(SEC_CAMERA, "Sensitivity", Player_Camera_GetMouseSensitivity(), path);
-    WriteInt  (SEC_CAMERA, "InvertY",     Player_Camera_GetMouseInvertY() ? 1 : 0, path);
+    WriteFloat(SEC_CAMERA, "Sensitivity",    Player_Camera_GetMouseSensitivity(), path);
+    WriteInt  (SEC_CAMERA, "InvertY",        Player_Camera_GetMouseInvertY() ? 1 : 0, path);
+    WriteFloat(SEC_CAMERA, "PadSensitivity", Player_Camera_GetPadSensitivity(), path);
 
     // ── Display ────────────────────────────────────────────
     WriteInt(SEC_DISPLAY, "Fullscreen", GameWindow_IsFullscreen() ? 1 : 0, path);

@@ -81,20 +81,26 @@ namespace
     // 定数
     //==========================================================================
     static constexpr int MAIN_COUNT = 3;   // RESUME / OPTION / TITLE
-    static constexpr int OPTION_COUNT = 3;   // ボリューム / 感度（統一） / Y軸反転
+    static constexpr int OPTION_COUNT = 4;   // ボリューム / マウス感度 / パッド感度 / Y軸反転
 
-    static constexpr float SENS_STEP = 0.0025f;
+    static constexpr float SENS_STEP = 0.0025f;   // マウス感度1段階
     static constexpr int   SENS_MIN = 1;
     static constexpr int   SENS_MAX = 20;
 
+    // ゲームパッド感度（右スティック倍率。step*0.1 = 倍率 0.1〜2.0）
+    static constexpr float PAD_SENS_STEP = 0.1f;
+    static constexpr int   PAD_SENS_MIN  = 1;
+    static constexpr int   PAD_SENS_MAX  = 20;
+
     // オプションパネル（仮想1600×900空間）
     static constexpr float OPT_PNL_W = 700.0f;
-    static constexpr float OPT_PNL_H = 320.0f;  // 3行に縮小
+    static constexpr float OPT_PNL_H = 385.0f;  // 4行
     static constexpr float OPT_PNL_X = (1600.0f - OPT_PNL_W) * 0.5f;
-    static constexpr float OPT_PNL_Y = 255.0f;
+    static constexpr float OPT_PNL_Y = 235.0f;
     static constexpr float OPT_ROW_Y0 = OPT_PNL_Y + 78.0f;    // ボリューム
-    static constexpr float OPT_ROW_Y1 = OPT_PNL_Y + 143.0f;   // 感度（統一）
-    static constexpr float OPT_ROW_Y2 = OPT_PNL_Y + 208.0f;   // Y軸反転
+    static constexpr float OPT_ROW_Y1 = OPT_PNL_Y + 143.0f;   // マウス感度
+    static constexpr float OPT_ROW_Y2 = OPT_PNL_Y + 208.0f;   // パッド感度
+    static constexpr float OPT_ROW_Y3 = OPT_PNL_Y + 273.0f;   // Y軸反転
     static constexpr float OPT_BAR_X = OPT_PNL_X + 310.0f;
     static constexpr float OPT_BAR_W = 300.0f;
     static constexpr float OPT_BAR_H = 16.0f;
@@ -223,7 +229,7 @@ PauseResult Pause_Update()
             if (trigLeft) { g_Volume = std::max(0.0f, g_Volume - 0.1f); SetMasterVolume(g_Volume); PlayAudio(g_SeChange, false); }
             if (trigRight) { g_Volume = std::min(1.0f, g_Volume + 0.1f); SetMasterVolume(g_Volume); PlayAudio(g_SeChange, false); }
         }
-        else if (g_Cursor == 1) // 感度（横縦統一）
+        else if (g_Cursor == 1) // マウス感度（横縦統一）
         {
             int step = static_cast<int>(roundf(Player_Camera_GetMouseSensitivity() / SENS_STEP));
             step = std::max(SENS_MIN, std::min(SENS_MAX, step));
@@ -242,7 +248,24 @@ PauseResult Pause_Update()
                 PlayAudio(g_SeChange, false);
             }
         }
-        else // Y軸反転（cursor == 2）
+        else if (g_Cursor == 2) // ゲームパッド感度
+        {
+            int step = static_cast<int>(roundf(Player_Camera_GetPadSensitivity() / PAD_SENS_STEP));
+            step = std::max(PAD_SENS_MIN, std::min(PAD_SENS_MAX, step));
+            if (trigLeft && step > PAD_SENS_MIN)
+            {
+                --step;
+                Player_Camera_SetPadSensitivity(step * PAD_SENS_STEP);
+                PlayAudio(g_SeChange, false);
+            }
+            if (trigRight && step < PAD_SENS_MAX)
+            {
+                ++step;
+                Player_Camera_SetPadSensitivity(step * PAD_SENS_STEP);
+                PlayAudio(g_SeChange, false);
+            }
+        }
+        else // Y軸反転（cursor == 3）
         {
             if (trigLeft || trigRight) { Player_Camera_SetMouseInvertY(!Player_Camera_GetMouseInvertY()); PlayAudio(g_SeChange, false); }
         }
@@ -264,8 +287,8 @@ PauseResult Pause_Update()
     // PauseState::Main  – メインメニュー
     //==================================================================
 
-    // ESC → 即リジューム
-    if (trigEsc) return PauseResult::Resume;
+    // ESC / B → 即リジューム（閉じる効果音を鳴らす）
+    if (trigEsc) { PlayAudio(g_SeCancel, false); return PauseResult::Resume; }
 
     // カーソル上下
     if (trigUp) { g_Cursor = (g_Cursor - 1 + MAIN_COUNT) % MAIN_COUNT; PlayAudio(g_SeCursorMove, false); }
@@ -333,6 +356,14 @@ void Pause_Draw()
         const int   sensStep = toStep(Player_Camera_GetMouseSensitivity());
         const float sensRatio = static_cast<float>(sensStep - SENS_MIN) / (SENS_MAX - SENS_MIN);
 
+        // パッド感度ステップ
+        auto toPadStep = [](float sens) -> int {
+            return std::max(PAD_SENS_MIN, std::min(PAD_SENS_MAX,
+                static_cast<int>(roundf(sens / PAD_SENS_STEP))));
+            };
+        const int   padStep  = toPadStep(Player_Camera_GetPadSensitivity());
+        const float padRatio = static_cast<float>(padStep - PAD_SENS_MIN) / (PAD_SENS_MAX - PAD_SENS_MIN);
+
         // ─ バー描画 ────────────────────────────────────────────────────
         auto drawBar = [&](float rowY, float ratio)
             {
@@ -345,11 +376,12 @@ void Pause_Draw()
             };
         drawBar(OPT_ROW_Y0, g_Volume);
         drawBar(OPT_ROW_Y1, sensRatio);
+        drawBar(OPT_ROW_Y2, padRatio);
         // Y軸反転はバーなし（ON/OFFトグルのみ）
 
         // ─ 選択行ハイライト ───────────────────────────────────────────
         const XMFLOAT4 SEL_HL = { 0.2f, 0.72f, 1.0f, 0.15f };
-        const float rowYs[OPTION_COUNT] = { OPT_ROW_Y0, OPT_ROW_Y1, OPT_ROW_Y2 };
+        const float rowYs[OPTION_COUNT] = { OPT_ROW_Y0, OPT_ROW_Y1, OPT_ROW_Y2, OPT_ROW_Y3 };
         Sprite_Draw(g_TexWhite, OPT_PNL_X + 4.0f, rowYs[g_Cursor] - 22.0f,
             OPT_PNL_W - 8.0f, 44.0f, SEL_HL);
 
@@ -370,14 +402,16 @@ void Pause_Draw()
 
             char volPct[8];  snprintf(volPct, sizeof(volPct), "%d%%", static_cast<int>(roundf(g_Volume * 100.0f)));
             char sensStr[8]; snprintf(sensStr, sizeof(sensStr), "%d", sensStep);
+            char padStr[8];  snprintf(padStr, sizeof(padStr), "%d", padStep);
             const bool invertY = Player_Camera_GetMouseInvertY();
 
             // ラベル（右揃え DW）
             g_pDW_Label->SetScale(scaleX, scaleY);
             g_pDW_Label->BeginBatch();
-            g_pDW_Label->DrawAt(std::wstring(L"ボリューム"), LBL_CX, OPT_ROW_Y0, LBL_HW, (g_Cursor == 0) ? dCYAN : dWHITE, 1.5f);
-            g_pDW_Label->DrawAt(std::wstring(L"感度"), LBL_CX, OPT_ROW_Y1, LBL_HW, (g_Cursor == 1) ? dCYAN : dWHITE, 1.5f);
-            g_pDW_Label->DrawAt(std::wstring(L"Y軸反転"), LBL_CX, OPT_ROW_Y2, LBL_HW, (g_Cursor == 2) ? dCYAN : dWHITE, 1.5f);
+            g_pDW_Label->DrawAt(std::wstring(L"ボリューム"),   LBL_CX, OPT_ROW_Y0, LBL_HW, (g_Cursor == 0) ? dCYAN : dWHITE, 1.5f);
+            g_pDW_Label->DrawAt(std::wstring(L"マウス感度"),   LBL_CX, OPT_ROW_Y1, LBL_HW, (g_Cursor == 1) ? dCYAN : dWHITE, 1.5f);
+            g_pDW_Label->DrawAt(std::wstring(L"パッド感度"),   LBL_CX, OPT_ROW_Y2, LBL_HW, (g_Cursor == 2) ? dCYAN : dWHITE, 1.5f);
+            g_pDW_Label->DrawAt(std::wstring(L"Y軸反転"),      LBL_CX, OPT_ROW_Y3, LBL_HW, (g_Cursor == 3) ? dCYAN : dWHITE, 1.5f);
             g_pDW_Label->EndBatch();
             g_pDW_Label->SetScale(1.0f, 1.0f);
 
@@ -387,7 +421,8 @@ void Pause_Draw()
             g_pDW->DrawAt(std::wstring(L"オプション"), cx, OPT_PNL_Y + 30.0f, 160.0f, dAMBER, 1.5f);
             g_pDW->DrawAt(volPct, VAL_CX, OPT_ROW_Y0, VAL_HW, (g_Cursor == 0) ? dCYAN : dGRAY, 1.5f);
             g_pDW->DrawAt(sensStr, VAL_CX, OPT_ROW_Y1, VAL_HW, (g_Cursor == 1) ? dCYAN : dGRAY, 1.5f);
-            g_pDW->DrawAt(invertY ? "ON" : "OFF", VAL_CX, OPT_ROW_Y2, VAL_HW, (g_Cursor == 2) ? dCYAN : dGRAY, 1.5f);
+            g_pDW->DrawAt(padStr, VAL_CX, OPT_ROW_Y2, VAL_HW, (g_Cursor == 2) ? dCYAN : dGRAY, 1.5f);
+            g_pDW->DrawAt(invertY ? "ON" : "OFF", VAL_CX, OPT_ROW_Y3, VAL_HW, (g_Cursor == 3) ? dCYAN : dGRAY, 1.5f);
             g_pDW->DrawAt(std::wstring(L"ESC / B : 戻る"), cx, OPT_PNL_Y + OPT_PNL_H - 25.0f, 180.0f, dGRAY, 1.2f);
             g_pDW->EndBatch();
             g_pDW->SetScale(1.0f, 1.0f);

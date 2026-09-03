@@ -109,7 +109,9 @@ inline bool UI_IsConfirmHeld()
 }
 inline bool UI_IsCancelHeld()
 {
-    return KeyLogger_IsPressed(KK_ESCAPE) || PadLogger_IsPressed(PAD_BACK);
+    return KeyLogger_IsPressed(KK_ESCAPE)
+        || PadLogger_IsPressed(PAD_B)      // 他画面のキャンセルと統一（ポーズをBで閉じる）
+        || PadLogger_IsPressed(PAD_BACK);
 }
 
 #endif // UI_INPUT_H

@@ -209,6 +209,16 @@ int Map_GetObjectsCount();
 //==============================================================================
 const MapObject* Map_GetObject(int index);
 
+//==============================================================================
+// 壁コライダー（高速走査用）
+// ・g_MapObjects から KIND_WALL だけを抜き出したリスト（Map_RegisterFloors で構築）
+// ・壁だけを走査したい衝突/レイキャストで使う（数千要素の全走査を回避）
+//==============================================================================
+int Map_GetWallColliderCount();
+const AABB* Map_GetWallCollider(int index);
+int Map_GetFloorColliderCount();
+const AABB* Map_GetFloorCollider(int index);
+
 // Map_Initialize() などの宣言がある場所に追加する用
 std::uint32_t Map_GenerateRandomSeed();
 

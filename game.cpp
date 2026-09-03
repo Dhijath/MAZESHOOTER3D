@@ -56,6 +56,7 @@ using namespace DirectX;
 #include "Option.h"
 #include "Score.h"
 #include "Skybox.h"
+#include "Shop.h"
 
 
 
@@ -483,8 +484,8 @@ void Game_Update(double elapsed_time)
     {
         static bool s_LockOnCamMode = false;
 
-        // Bボタンでモードトグル
-        if (PadLogger_IsTrigger(PAD_B))
+        // Xボタンでモードトグル（Bはダッシュ専用のため競合回避）
+        if (PadLogger_IsTrigger(PAD_X))
             s_LockOnCamMode = !s_LockOnCamMode;
 
         // 右スティック入力中だけ一時抑制（モードは変えない）
@@ -730,6 +731,12 @@ void Game_Draw()
     SparkEffect_Draw();
 
     Player_Draw();
+
+    // サバイバル：ショップの目印（body＋シールド球）を 3D ワールドパス内で描画する。
+    // ここ（壁の深度が残っている・HUD の ClearDepth より前）で描くことで
+    // 壁に正しく隠れ、かつ後続の 2D/ポーズ描画のブレンド状態を壊さない。
+    if (g_IsSurvival)
+        Shop_DrawWorld();
 
     // ゴールビルボード（半透明）はモデルを全部描いた後に描画
     // → 透過部分越しにエネミー・プレイヤーが正しく見える

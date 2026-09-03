@@ -140,6 +140,7 @@ namespace
         case WEAPON_SHOTGUN:      return new WeaponShotgun();
         case WEAPON_MISSILE:      return new WeaponMissile();
         case WEAPON_MULTIMISSILE: return new WeaponMultiMissile();
+        case WEAPON_TRIPLEGUN:    return new WeaponTripleGun();
         default:                  return nullptr;
         }
     }
@@ -152,6 +153,7 @@ namespace
     int g_SeShieldRetract            = -1;  // シールド収納SE
     int g_SeBoost                    = -1;  // 移動ブーストSE（移動中ループ）
     double g_BoostLoopTimer          = 0.0; // ブーストSEを1秒ごとに鳴らすタイマー
+    int g_SeDash                     = -1;  // ダッシュ（SHIFT/PAD_B）SE：パンチの風切り音
     static constexpr double BOOST_LOOP_INTERVAL = 1.0; // ループ間隔（秒）
 
     //--------------------------------------------------------------------------
@@ -579,14 +581,14 @@ namespace
         XMVECTOR bestNormal = XMVectorZero();
         bool foundCollision = false;
 
-        for (int i = 0; i < Map_GetObjectsCount(); i++)
-        {
-            const MapObject* mo = Map_GetObject(i);
-            if (!mo) continue;
-            if (mo->KindId != 2) continue;
+        // プレイヤーOBBは壁ごとに変わらないのでループ外で1回だけ計算
+        OBB playerOBB = Player_ConvertPositionToOBB(*ioPos);
 
-            OBB playerOBB = Player_ConvertPositionToOBB(*ioPos);
-            Hit hit = Collision_IsHitOBB_AABB(playerOBB, mo->Aabb);
+        const int wallCount = Map_GetWallColliderCount();
+        for (int i = 0; i < wallCount; i++)
+        {
+            const AABB& wallAabb = *Map_GetWallCollider(i);   // 壁のみの高速リスト
+            Hit hit = Collision_IsHitOBB_AABB(playerOBB, wallAabb);
             if (!hit.isHit) continue;
 
             if (hit.penetration > maxPenetration)
@@ -760,6 +762,7 @@ void Player_Initialize(const DirectX::XMFLOAT3& position, const DirectX::XMFLOAT
     g_NormalWeapons[WEAPON_SHOTGUN]      = new WeaponShotgun();
     g_NormalWeapons[WEAPON_MISSILE]      = new WeaponMissile();
     g_NormalWeapons[WEAPON_MULTIMISSILE] = new WeaponMultiMissile();
+    g_NormalWeapons[WEAPON_TRIPLEGUN]    = new WeaponTripleGun();
     for (int i = 0; i < WEAPON_COUNT; ++i)
         if (g_NormalWeapons[i]) g_NormalWeapons[i]->Initialize();
 
@@ -770,6 +773,7 @@ void Player_Initialize(const DirectX::XMFLOAT3& position, const DirectX::XMFLOAT
     g_SeShieldDeploy  = LoadAudio("resource/Sound/shield_deploy.wav");
     g_SeShieldRetract = LoadAudio("resource/Sound/shield_retract.wav");
     g_SeBoost         = LoadAudioWithVolume("resource/Sound/Boost2.wav", 0.40f);
+    g_SeDash          = LoadAudioWithVolume("resource/Sound/dash_whoosh.wav", 0.90f); // パンチの風切り音（スローモーション）
 
     PadLogger_Initialize();
 
@@ -868,6 +872,7 @@ void Player_Finalize() // プレイヤーの終了処理（モデル解放・ス
     UnloadAudio(g_SeShieldRetract); g_SeShieldRetract = -1;
     StopAudio(g_SeBoost);
     UnloadAudio(g_SeBoost);         g_SeBoost         = -1;
+    UnloadAudio(g_SeDash);          g_SeDash          = -1;
 }
 
 //==============================================================================
@@ -1046,12 +1051,9 @@ void Player_Update(double elapsed_time)
             g_DashTimer    = DASH_DURATION;
             g_DashCooldown = DASH_COOLDOWN;
 
-            // ダッシュ音（ブーストSEを大きめの音量で1回鳴らす）
-            if (g_SeBoost >= 0)
-            {
-                SetAudioVolume(g_SeBoost, 0.90f);
-                PlayAudio(g_SeBoost, false);
-            }
+            // ダッシュ音（パンチの風切り音を1回鳴らす）
+            if (g_SeDash >= 0)
+                PlayAudio(g_SeDash, false);
         }
     }
 

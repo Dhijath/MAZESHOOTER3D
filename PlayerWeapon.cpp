@@ -61,13 +61,74 @@ bool WeaponNormal::TryFire(
 
 
 //==============================================================================
+// WeaponTripleGun（トリプルマシンガン：横3列平行発射）
+//==============================================================================
+
+void WeaponTripleGun::Initialize()
+{
+    m_cooldown = 0.0;
+    m_shootSE  = LoadAudioWithVolume("resource/sound/machine_gun.wav", 0.5f);
+}
+
+void WeaponTripleGun::Finalize()
+{
+    UnloadAudio(m_shootSE);
+    m_shootSE = -1;
+}
+
+void WeaponTripleGun::Update(double dt)
+{
+    if (m_cooldown > 0.0) m_cooldown -= dt;
+}
+
+bool WeaponTripleGun::TryFire(
+    const XMFLOAT3& muzzlePos,
+    const XMFLOAT3& aimDir,
+    float           damageMult)
+{
+    if (m_cooldown > 0.0) return false;
+
+    const int finalDamage = static_cast<int>(BASE_DAMAGE * damageMult);
+
+    XMVECTOR aimV = XMVector3Normalize(XMLoadFloat3(&aimDir));
+
+    // 横方向（右）ベクトル：aim が真上/真下のときは別軸を基準にする
+    XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+    XMVECTOR right;
+    if (fabsf(XMVectorGetX(XMVector3Dot(aimV, up))) > 0.99f)
+        right = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
+    else
+        right = XMVector3Normalize(XMVector3Cross(up, aimV));
+
+    // 3列とも同じ方向（平行）。速度ベクトルは共通
+    XMFLOAT3 vel;
+    XMStoreFloat3(&vel, aimV * BULLET_SPEED);
+
+    // マズルを横にずらして中央・右・左の3列を平行発射（拡散なし）
+    const float offsets[BARREL_COUNT] = { 0.0f, BARREL_SPACING, -BARREL_SPACING };
+    XMVECTOR muzzleV = XMLoadFloat3(&muzzlePos);
+    for (int i = 0; i < BARREL_COUNT; ++i)
+    {
+        XMFLOAT3 mp;
+        XMStoreFloat3(&mp, muzzleV + right * offsets[i]);
+        Bullet_Create(mp, vel, finalDamage);
+    }
+
+    if (m_shootSE >= 0) PlayAudio(m_shootSE, false);
+
+    m_cooldown = FIRE_INTERVAL;
+    return true;
+}
+
+
+//==============================================================================
 // WeaponMissile（ミサイル）
 //==============================================================================
 
 void WeaponMissile::Initialize()
 {
     m_cooldown = 0.0;
-    m_shootSE  = LoadAudioWithVolume("resource/sound/maou_se_battle_gun05.wav", 0.5f);
+    m_shootSE  = LoadAudioWithVolume("resource/sound/rocket_launcher.wav", 0.5f);
 }
 
 void WeaponMissile::Finalize()

@@ -55,3 +55,12 @@ InputDevice InputHint_GetActiveDevice();
 // padText : ゲームパッド向け説明文
 // desc    : ヒントバーの上行に表示する項目説明（nullptr で非表示）
 void InputHint_Draw(const char* kbmText, const char* padText, const wchar_t* desc = nullptr);
+
+//==============================================================================
+// 任意位置に「文言＋ボタンアイコン」を描画する（バー背景なし）。
+// InputHint_Draw と同じく KB/パッドで表示を自動切替する。
+//   kbmText / padText : {TAG} を含む文字列（例 "{E} SHOP" / "{A} SHOP"）
+//   cx, cy            : 仮想 1600×900 座標での「トークン列の中心」位置
+//   scale             : 拡大率（1.0=バーと同サイズ、>1 で大きく）
+//==============================================================================
+void InputHint_DrawAt(const char* kbmText, const char* padText, float cx, float cy, float scale = 1.0f);

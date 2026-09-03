@@ -18,6 +18,11 @@
 #include "DirectWrite.h"
 #include "audio.h"
 #include "input_hint.h"
+#include "model.h"
+#include "ModelToon.h"
+#include "Player_Camera.h"
+#include "shield.h"
+#include "light.h"
 #include <d2d1helper.h>
 #include <DirectXMath.h>
 #include <cstdio>
@@ -30,6 +35,9 @@ namespace
     static bool     g_IsOpen    = false;
     static int      g_ShopBudget = 0;   // ショップを開いた時点の所持金（購入額算出用）
     static int      g_TexShop = -1;
+
+    static MODEL*   g_pBodyModel = nullptr; // フィールド目印用ボディモデル（body.fbx）
+    static double   g_AnimTime   = 0.0;     // 目印の浮遊・回転アニメ用の経過時間
     static int      g_WhiteTex = -1;
     static int      g_SeOpen   = -1;
     static int      g_SeCursor = -1;
@@ -82,6 +90,11 @@ void Shop_Initialize(const XMFLOAT3& pos)
     g_TexShop  = Texture_Load(L"resource/texture/white.png"); // TODO: 専用テクスチャ
     g_WhiteTex = Texture_Load(L"resource/texture/white.png");
 
+    // フィールド目印用ボディモデル（プレイヤーと同じ body.fbx を流用）
+    if (!g_pBodyModel)
+        g_pBodyModel = ModelLoad("resource/Models/body.fbx", 0.3f);
+    g_AnimTime = 0.0;
+
     if (g_SeOpen   < 0) g_SeOpen   = LoadAudio("resource/Sound/ui_select.wav");
     if (g_SeCursor < 0) g_SeCursor = LoadAudio("resource/Sound/ui_cursor_move.wav");
     if (g_SeSelect < 0) g_SeSelect = LoadAudio("resource/Sound/ui_select.wav");
@@ -90,7 +103,7 @@ void Shop_Initialize(const XMFLOAT3& pos)
     if (!g_pDWTitle)
     {
         static FontData fd;
-        fd.font = Font::Arial; fd.fontWeight = DWRITE_FONT_WEIGHT_BOLD;
+        fd.font = Font::AgencyFB; fd.fontWeight = DWRITE_FONT_WEIGHT_BOLD;   // メニューと同じ圧縮ミリタリー調（英字専用）
         fd.fontStyle = DWRITE_FONT_STYLE_NORMAL; fd.fontStretch = DWRITE_FONT_STRETCH_NORMAL;
         fd.fontSize = BASE_FONT_SIZE; fd.localeName = L"en-us";
         fd.textAlignment = DWRITE_TEXT_ALIGNMENT_CENTER;
@@ -127,6 +140,8 @@ void Shop_Finalize()
     // ショップを開いたまま終了する場合はアセンブリ画面も後始末する
     if (g_IsOpen) { AssemblyScreen_SetShopMode(false, 0); AssemblyScreen_Finalize(); }
 
+    if (g_pBodyModel) { ModelRelease(g_pBodyModel); g_pBodyModel = nullptr; }
+
     if (g_pDWTitle) { g_pDWTitle->Release(); delete g_pDWTitle; g_pDWTitle = nullptr; }
     if (g_pDWItem)  { g_pDWItem->Release();  delete g_pDWItem;  g_pDWItem  = nullptr; }
     if (g_pDWInfo)  { g_pDWInfo->Release();  delete g_pDWInfo;  g_pDWInfo  = nullptr; }
@@ -139,6 +154,8 @@ void Shop_Finalize()
 
 void Shop_Update(double elapsed_time)
 {
+    g_AnimTime += elapsed_time;   // フィールド目印の浮遊・回転アニメ
+
     if (!g_IsOpen)
     {
         // 近くでEキー/Aボタン→アセンブリ画面をショップとして開く
@@ -179,19 +196,58 @@ void Shop_Update(double elapsed_time)
     }
 }
 
-void Shop_Draw()
+//==============================================================================
+// フィールド上のショップ目印（body＋シールド球）を描画する。
+//
+// ■必ず Game_Draw() の「3Dワールドパス内」（プレイヤー描画の直後・HUD/2Dパスの前）
+//   から呼ぶこと。理由：
+//   ・壁の深度がまだ深度バッファに残っている＝壁に正しく隠れる
+//     （HUD はミニプレビュー用に Direct3D_ClearDepth() で深度を消すため、
+//      それより後に描くと壁を透過してしまう）
+//   ・2Dパスやブレンド/深度ステートを壊さない（ポーズ画面の暗転が正しく効く）
+//==============================================================================
+void Shop_DrawWorld()
 {
-    // ショップのビルボード表示（スポーン地点に目印）
-    if (g_TexShop >= 0)
+    if (g_IsOpen)      return;   // メニュー表示中は世界の目印は不要
+    if (!g_pBodyModel) return;
+
+    // ── 浮遊アニメ（ゆっくり回転＋上下バウンド）──
+    const float t    = static_cast<float>(g_AnimTime);
+    const float bob  = sinf(t * 2.0f) * 0.15f;      // 上下の揺れ幅 ±0.15m
+    const float spin = t * 0.8f;                     // Y回転 約0.8rad/秒
+    const float baseY = g_Pos.y + 1.2f + bob;        // 地面から少し浮かせる
+
+    // ライティング（アセンブリ画面のプレビューと同系）
+    Light_SetSpecularWorld(Player_Camera_GetPosition(), 100.0f, { 0.6f, 0.5f, 0.4f, 1.0f });
+    Light_SetAmbient({ 0.5f, 0.5f, 0.5f });
+
+    // ボディをショップ位置に描画（Y回転で回す）
+    const XMMATRIX world =
+        XMMatrixRotationY(spin) *
+        XMMatrixTranslation(g_Pos.x, baseY, g_Pos.z);
+    ModelDrawToon(g_pBodyModel, world);
+
+    // 胴体を包むシールド球体（body の AABB から中心・半径を算出）
     {
-        const XMFLOAT3 drawPos = { g_Pos.x, g_Pos.y + 2.0f, g_Pos.z };
-        Billboard_Draw(g_TexShop, drawPos,
-                       XMFLOAT2{ 2.0f, 2.0f },
-                       XMFLOAT4{ 0.3f, 0.8f, 1.0f, 0.9f },
-                       XMFLOAT4{ 0, 0,
-                           (float)Texture_Width(g_TexShop),
-                           (float)Texture_Height(g_TexShop) });
+        const AABB  bb  = ModelGetAABB(g_pBodyModel, { g_Pos.x, baseY, g_Pos.z });
+        const float cy  = (bb.min.y + bb.max.y) * 0.5f;
+        float ext = bb.max.x - bb.min.x;
+        const float ey  = bb.max.y - bb.min.y;
+        const float ez  = bb.max.z - bb.min.z;
+        if (ey > ext) ext = ey;
+        if (ez > ext) ext = ez;
+
+        const XMFLOAT3 center = { g_Pos.x, cy, g_Pos.z };
+        const float    radius = ext * 0.75f;
+
+        Shield_DrawAt(center,
+                      Player_Camera_GetViewMatrix(),
+                      Player_Camera_GetProjectionMatrix(),
+                      radius);
     }
+
+    // ライトを既定へ戻す（Player_Draw 末尾と同様）
+    Light_SetAmbient({ 1.0f, 1.0f, 1.0f });
 }
 
 void Shop_DrawUI()
@@ -205,6 +261,29 @@ void Shop_DrawUI()
     InputHint_Draw(
         "{W}{S} Move    {ENTER} Set / Buy    {TAB} Jump    {ESC} Close",
         "{DPAD_UP}{DPAD_DN} Move    {A} Set / Buy    {LB}{RB} Jump    {B} Close");
+}
+
+//==============================================================================
+// 近接プロンプト：ショップの近くにいてメニュー未表示のとき、
+// 「E / A で開く」案内を画面2Dに表示する。
+//==============================================================================
+void Shop_DrawPrompt()
+{
+    if (g_IsOpen) return;                          // メニュー表示中は不要
+    if (DistToPlayer() > INTERACT_DIST) return;    // 近接時のみ
+
+    // 中央ロックオン照準（画面中心 800,450）の右下・外側にオフセット配置。
+    // OFFSET_X / OFFSET_Y を増やすほど照準から外（右・下）へ離れる。
+    constexpr float CENTER_X = 800.0f;   // 画面中央X（仮想1600の半分＝照準中心）
+    constexpr float CENTER_Y = 450.0f;   // 画面中央Y（仮想900の半分＝照準中心）
+    constexpr float OFFSET_X = 220.0f;   // 右方向オフセット（外へ）
+    constexpr float OFFSET_Y = 200.0f;   // 下方向オフセット（外へ）
+    const float px = CENTER_X + OFFSET_X;
+    const float py = CENTER_Y + OFFSET_Y;
+
+    // チュートリアル風：文言＋ボタンアイコン。KB=Eキー / パッド=Aボタンで自動切替。
+    // scale で下部バーより大きめに表示。
+    InputHint_DrawAt("{E} SHOP", "{A} SHOP", px, py, 1.6f);
 }
 
 bool Shop_IsOpen() { return g_IsOpen; }

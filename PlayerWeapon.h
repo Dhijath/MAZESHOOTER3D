@@ -126,6 +126,37 @@ private:
 
 
 //==============================================================================
+// トリプルマシンガン（WeaponTripleGun）
+//
+// ■特性
+// ・マシンガンと同じ連射レート・弾速
+// ・横に3列（中央・右・左）平行に同時発射する
+// ・1発の威力はマシンガンの60%（40%減）
+//==============================================================================
+class WeaponTripleGun : public PlayerWeapon
+{
+public:
+    void        Initialize() override;
+    void        Finalize()   override;
+    void        Update(double dt) override;
+    bool        TryFire(const DirectX::XMFLOAT3& muzzlePos,
+                        const DirectX::XMFLOAT3& aimDir,
+                        float damageMult) override;
+    const char* GetName() const override { return "トリプルマシンガン"; }
+
+private:
+    static constexpr double FIRE_INTERVAL = 0.09;   // 連射間隔（秒・MG同等）
+    static constexpr float  BULLET_SPEED  = 46.0f;  // 弾速（単位/秒・MG同等）
+    static constexpr int    BASE_DAMAGE   = 27;     // 基礎ダメージ（45×0.6＝40%減）
+    static constexpr int    BARREL_COUNT  = 3;      // 横バレル本数
+    static constexpr float  BARREL_SPACING = 0.18f; // 隣り合うバレルの横間隔（ワールド単位）
+
+    double m_cooldown = 0.0;
+    int    m_shootSE  = -1;
+};
+
+
+//==============================================================================
 // ミサイル（WeaponMissile）
 //
 // ■特性
@@ -177,7 +208,7 @@ private:
     static constexpr double FIRE_INTERVAL    = 1.20;    // 発射間隔（秒）
     static constexpr float  BULLET_SPEED     = 28.0f;   // 曲線到達後の弾速（単位/秒）
     static constexpr int    BASE_DAMAGE      = 90;      // 1発あたりの爆発ダメージ
-    static constexpr float  EXPLOSION_RADIUS = 6.0f;    // 爆発半径
+    static constexpr float  EXPLOSION_RADIUS = 3.0f;    // 爆発半径（5発同時のため小さめ）
 
     static constexpr int    MISSILE_COUNT       = 5;      // 1射あたりの本数
     static constexpr float  SPREAD_WIDTH        = 5.0f;   // 横方向の膨らみ幅

@@ -198,7 +198,8 @@ void EnemyTank::CheckShieldBulletHits()
         const OBB bulletOBB = Bullet_GetOBB(i);
         if (!Collision_IsHitOBB_AABB(bulletOBB, shieldAABB).isHit) continue;
 
-        const int dmg = Bullet_GetDamage(i);
+        // 盾は10%カットして受ける（SEは従来どおり無し＝そのまま）
+        const int dmg = static_cast<int>(Bullet_GetDamage(i) * 0.9f);
 
         // ビーム弾は貫通するため消滅させない（ダメージのみ与える）
         if (!Bullet_IsBeam(i))

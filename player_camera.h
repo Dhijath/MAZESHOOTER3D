@@ -68,6 +68,8 @@ float Player_Camera_GetMouseSensitivityPitch();      // 縦感度（Pitch）
 void  Player_Camera_SetMouseSensitivityPitch(float pitchSens);
 bool  Player_Camera_GetMouseInvertY();               // Y軸反転
 void  Player_Camera_SetMouseInvertY(bool invert);
+float Player_Camera_GetPadSensitivity();             // ゲームパッド感度（右スティック倍率）
+void  Player_Camera_SetPadSensitivity(float sens);
 
 bool Player_Camera_IsMouseLeftTrigger();
 bool Player_Camera_IsMouseLeftPressed();

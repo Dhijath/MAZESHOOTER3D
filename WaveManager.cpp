@@ -26,6 +26,9 @@ namespace
     static constexpr double WAVE_CLEAR_SEC  = 2.0;   // クリア演出時間
     static constexpr double SHOP_SEC        = 8.0;   // 購入タイム（ショップを開くとポーズするため短め）
 
+    // 敵の密度倍率（各ウェーブの湧き数・ボスの取り巻きに掛ける）
+    static constexpr int   DENSITY_MULT     = 3;
+
     static int       g_Wave    = 0;
     static WavePhase g_Phase   = WavePhase::Idle;
     static double    g_Timer   = 0.0;
@@ -47,8 +50,8 @@ namespace
 
     static std::vector<SpawnEntry> CalcSpawnList(int wave)
     {
-        // 基本数：wave * 2 + 3（wave1=5体、wave10=23体）
-        const int base = wave * 2 + 3;
+        // 基本数：(wave * 2 + 3) × 密度倍率
+        const int base = (wave * 2 + 3) * DENSITY_MULT;
         std::vector<SpawnEntry> list;
 
         if (wave <= 3)
@@ -68,10 +71,10 @@ namespace
         }
         else // wave 10
         {
-            list.push_back({ 0 /*Normal*/, 6 });
-            list.push_back({ 2 /*Speed*/,  6 });
-            list.push_back({ 1 /*Tank*/,   5 });
-            list.push_back({ 3 /*Sniper*/, 4 });
+            list.push_back({ 0 /*Normal*/, 6 * DENSITY_MULT });
+            list.push_back({ 2 /*Speed*/,  6 * DENSITY_MULT });
+            list.push_back({ 1 /*Tank*/,   5 * DENSITY_MULT });
+            list.push_back({ 3 /*Sniper*/, 4 * DENSITY_MULT });
         }
         return list;
     }
@@ -92,7 +95,7 @@ namespace
             // ボスウェーブ：ボス1体＋少数の取り巻き
             Game_SpawnEnemy(spawns[pick(rng)], T_BOSS);
 
-            const int adds = 2 + wave / 5;   // wave5→3体, wave10→4体
+            const int adds = (2 + wave / 5) * DENSITY_MULT;   // 取り巻きも密度倍率を適用
             for (int i = 0; i < adds; ++i)
                 Game_SpawnEnemy(spawns[pick(rng)], (i % 2 == 0) ? 0 /*Normal*/ : 2 /*Speed*/);
             return;

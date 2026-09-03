@@ -318,6 +318,11 @@ public:
     //==========================================================================
     float GetExplosionRadius() const { return m_explosionRadius; }
 
+    //==========================================================================
+    // マルチミサイル（ベジェ発射）由来か。爆発エフェクトのサイズ切り替えに使う。
+    //==========================================================================
+    bool  IsBezier() const { return m_spawnedBezier; }
+
 private:
     DirectX::XMFLOAT3 m_position{};
     DirectX::XMFLOAT3 m_prevPosition{};
@@ -331,6 +336,7 @@ private:
     // ベジェ曲線飛行（マルチミサイル用）
     //--------------------------------------------------------------------------
     bool               m_useBezier{ false };
+    bool               m_spawnedBezier{ false };  // マルチミサイル由来か（恒久・爆発エフェクト縮小用）
     DirectX::XMFLOAT3  m_p0{}, m_p1{}, m_p2{};  // 始点 / 制御点 / 終点
     float              m_bezierDuration{ 1.0f };
     float              m_bezierElapsed{ 0.0f };
@@ -554,7 +560,8 @@ private:
     struct MODEL* m_pModelNormal { nullptr };          // 通常弾・ショットガンペレットのモデル
     struct MODEL* m_pModelMissile{ nullptr };          // ミサイルのモデル
     int           m_beamTexID{ -1 };                  // ビームのパーティクル用テクスチャID
-    int           m_explosionSE{ -1 };                // ミサイル爆発SE
+    int           m_explosionSE{ -1 };                // 通常ミサイル爆発SE
+    int           m_explosionSEMulti{ -1 };           // マルチミサイル爆発SE（大砲2）
 
     // ミサイル爆発キュー（毎フレーム Enemy_Update 側で消費・クリア）
     static constexpr int MAX_EXPLOSIONS = 32;
