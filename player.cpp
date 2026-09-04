@@ -1745,6 +1745,12 @@ bool Player_TakeDamage(int damage) // ダメージ処理（無敵中は無効、
         Player_SetEnable(false);
     }
 
+    // 被弾カメラシェイク（ダメージ量で強さをスケール：0.15〜0.5）
+    {
+        const float mag = 0.15f + std::min(damage / 2000.0f, 1.0f) * 0.35f;
+        Player_Camera_AddShake(mag, 0.25f);
+    }
+
     return true;
 }
 

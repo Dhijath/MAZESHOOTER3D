@@ -602,12 +602,11 @@ void BulletManager::Update(double elapsed_time)
             else if (type == BulletType::Missile)
             {
                 // ミサイル：爆発登録 + 火花エフェクト
-                // マルチミサイルは大きい粒・低速の専用エフェクトにする
+                // 爆発火花は当たり判定の半径に合わせたコンパクトなエフェクトにする
                 auto* m = static_cast<MissileBullet*>(m_bullets[i]);
                 AddExplosion(m->GetPrevPosition(), m->GetExplosionRadius(), m->GetDamage());
                 PlayAudio(m->IsBezier() ? m_explosionSEMulti : m_explosionSE, false);
-                if (m->IsBezier()) SparkEffect_CreateMulti(m->GetPrevPosition(), 1.0f);
-                else               SparkEffect_Create(m->GetPrevPosition(), 3.0f);
+                SparkEffect_CreateMulti(m->GetPrevPosition(), m->GetExplosionRadius() * 0.4f);
             }
             // BulletType::Beam はCheckWallCollision()内でエフェクト生成済み
 
@@ -757,8 +756,7 @@ void BulletManager::Destroy(int index)
         auto* m = static_cast<MissileBullet*>(m_bullets[index]);
         AddExplosion(m->GetPrevPosition(), m->GetExplosionRadius(), m->GetDamage());
         PlayAudio(m->IsBezier() ? m_explosionSEMulti : m_explosionSE, false);
-        if (m->IsBezier()) SparkEffect_CreateMulti(m->GetPrevPosition(), 1.0f);
-        else               SparkEffect_Create(m->GetPrevPosition(), 3.0f);
+        SparkEffect_CreateMulti(m->GetPrevPosition(), m->GetExplosionRadius() * 0.4f);
     }
     else
     {

@@ -205,7 +205,7 @@ static void ApplyFocus()
 
 // Sprite カラー定数
 static constexpr XMFLOAT4 kDim        = { 1.00f, 1.00f, 1.00f, 0.25f };
-static constexpr XMFLOAT4 kPanelBg    = { 0.04f, 0.06f, 0.12f, 0.90f };
+static constexpr XMFLOAT4 kPanelBg    = { 0.10f, 0.14f, 0.26f, 0.90f };  // モデルが見やすいよう少し明るめのネイビー
 static constexpr XMFLOAT4 kBorder     = { 0.30f, 0.60f, 1.00f, 0.70f };
 static constexpr XMFLOAT4 kSelBg      = { 0.15f, 0.35f, 0.80f, 0.80f };
 static constexpr XMFLOAT4 kBarEmpty   = { 0.10f, 0.10f, 0.12f, 1.00f };
@@ -561,7 +561,7 @@ void AssemblyScreen_Draw()
 
             // ライティング
             Light_SetSpecularWorld(eyeF3, 100.0f, { 0.6f, 0.5f, 0.4f, 1.0f });
-            Light_SetAmbient({ 0.5f, 0.5f, 0.5f });
+            Light_SetAmbient({ 0.65f, 0.65f, 0.65f });   // プレビューを少し明るく（モデル視認性UP）
 
             // 法線パス（エッジ検出用）
             ShaderEdge_BeginNormalPass();
@@ -694,7 +694,7 @@ void AssemblyScreen_Draw()
 
         Direct3D_SetDepthEnable(true);
         Light_SetSpecularWorld(ppEyeF3, 100.0f, { 0.6f, 0.5f, 0.4f, 1.0f });
-        Light_SetAmbient({ 0.5f, 0.5f, 0.5f });
+        Light_SetAmbient({ 0.65f, 0.65f, 0.65f });   // プレビューを少し明るく（モデル視認性UP）
 
         // 法線パス
         setPlayerVP();
