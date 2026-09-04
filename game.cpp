@@ -121,6 +121,10 @@ namespace
     std::uint32_t g_DungeonSeed = 12345u;
     static EnemyManager g_EnemyManager;
 
+    // ヒットストップ残り時間（秒）。>0 の間ゲーム更新を止める。
+    static double g_HitStopTimer = 0.0;
+    constexpr double HITSTOP_SEC = 0.07;   // 近接ヒット時の静止時間
+
     // ボス管理
     static Enemy* g_pBossEnemy = nullptr; // ボスへの生ポインタ（生存中のみ有効）
     static bool   g_BossDefeated = false;       // ボスが撃破されたか
@@ -394,6 +398,14 @@ void Game_Update(double elapsed_time)
     if (elapsed_time > MAX_DT)
         elapsed_time = MAX_DT;
 
+    // ヒットストップ：残り時間がある間はゲーム更新を止める（dt=0）。
+    // タイマーは実時間で減らすので、数フレームだけ全体が静止して手応えが出る。
+    if (g_HitStopTimer > 0.0)
+    {
+        g_HitStopTimer -= elapsed_time;
+        elapsed_time = 0.0;
+    }
+
     //--------------------------------------------------------------------------
     // デバッグ：F3 キーで HUD の表示/非表示トグル
     //--------------------------------------------------------------------------
@@ -541,6 +553,7 @@ void Game_Update(double elapsed_time)
             const ExplosionEvent exp = Bullet_GetPendingExplosion(i);
             const XMVECTOR vCenter = XMLoadFloat3(&exp.center);
             const int enemyCnt = g_EnemyManager.GetCount();
+            bool anyHit = false;   // この爆発で1体以上ヒットしたか（ヒットストップ用）
             for (int j = 0; j < enemyCnt; ++j)
             {
                 Enemy& e = g_EnemyManager.GetEnemy(j);
@@ -550,6 +563,10 @@ void Game_Update(double elapsed_time)
                 if (dist <= exp.radius)
                 {
                     e.Damage(exp.damage);
+                    anyHit = true;
+                    // ノックバック（近接ヒットなど knockback>0 の時のみ）
+                    if (exp.knockback > 0.0f)
+                        e.ApplyKnockback(exp.center, exp.knockback);
                     // 爆発ダメージもポップアップ表示
                     XMFLOAT3 popupPos = e.GetPosition();
                     popupPos.y += 1.2f;
@@ -566,6 +583,9 @@ void Game_Update(double elapsed_time)
                     }
                 }
             }
+            // 近接ヒット（knockback>0）が敵に当たったフレームだけヒットストップ
+            if (exp.knockback > 0.0f && anyHit)
+                g_HitStopTimer = HITSTOP_SEC;
         }
         Bullet_ClearPendingExplosions();
     }

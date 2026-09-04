@@ -58,7 +58,7 @@ void Enemy_LoadSE()
 
     if (g_enemy_bulletHitSE < 0)
     {
-        g_enemy_bulletHitSE = LoadAudioWithVolume("resource/sound/dageki5.wav", 0.8f); // 非ボス被弾音が小さかったため増量
+        g_enemy_bulletHitSE = LoadAudioWithVolume("resource/sound/dageki1.wav", 0.5f); // 非ボス被弾音が小さかったため増量
         SetAudioAttenuationEnabled(g_enemy_bulletHitSE, true);
     }
 
@@ -415,6 +415,19 @@ void Enemy::Damage(int value)
     m_Hp -= actual;
     if (m_Hp < 0) m_Hp = 0;
     Score_AddDamageDealt(actual);
+}
+
+//==============================================================================
+// ノックバック：center から自分へ向かう水平方向へ dist 押し出す
+//==============================================================================
+void Enemy::ApplyKnockback(const DirectX::XMFLOAT3& center, float dist)
+{
+    float dx = m_Position.x - center.x;
+    float dz = m_Position.z - center.z;
+    float len = sqrtf(dx * dx + dz * dz);
+    if (len < 0.0001f) { dx = 0.0f; dz = 1.0f; len = 1.0f; } // 真上下重なり時は前方へ
+    m_Position.x += (dx / len) * dist;
+    m_Position.z += (dz / len) * dist;
 }
 
 //==============================================================================
